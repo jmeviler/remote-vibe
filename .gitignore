@@ -1,0 +1,8 @@
+/recordings/
+/research/
+/mac-app/build/
+__pycache__/
+.DS_Store
+*.log
+.env
+.env.*

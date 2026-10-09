@@ -71,26 +71,40 @@ struct MappedButton {
 
 final class KeyMapping {
     typealias Bindings = [String: KeyBinding]
+    private typealias HIDMappings = [[String: UInt64]]
+    private struct Snapshot {
+        let service: IOHIDServiceClient
+        var original: HIDMappings
+        var owned: HIDMappings = []
+        var revision = -1
+    }
     private let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
     private var manager: IOHIDManager?
     private var held = Set<UInt8>()
     private var repeats: [UInt8: Timer] = [:]
-    private var snapshots: [UInt64: (service: IOHIDServiceClient, original: NSArray, applied: NSArray?)] = [:]
+    private var snapshots: [UInt64: Snapshot] = [:]
+    private var revision = 0
+    private var activeShortcuts = Set<UInt8>()
     private let property = "UserKeyMapping" as CFString
     private let src = "HIDKeyboardModifierMappingSrc"
     private let dst = "HIDKeyboardModifierMappingDst"
     private(set) var bindings: Bindings
     private(set) var status = "等待遥控器连接"
     private(set) var connected = false
+    private(set) var needsApply = false
     private var listenerOK = false
     var canPerform: () -> Bool = { true }
-    var onPress: (UInt8) -> Void = { _ in }
+    var listening: Bool { manager != nil }
     var listeningAllowed: Bool { IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted }
 
     init() {
         if let data = UserDefaults.standard.data(forKey: "keyMappings.v1"),
            let stored = try? JSONDecoder().decode(Bindings.self, from: data) {
-            bindings = stored.filter { _, b in b.kind != .key || b.key != nil }
+            let allowedFlags = CGEventFlags([.maskControl, .maskAlternate, .maskShift, .maskCommand]).rawValue
+            bindings = stored.filter { code, b in
+                MappedButton.all.contains { String($0.code) == code } &&
+                (b.kind != .key || (b.key != nil && b.modifiers & ~allowedFlags == 0))
+            }
         } else { bindings = [:] }
     }
 
@@ -100,13 +114,24 @@ final class KeyMapping {
         bindings = values
         if let data = try? JSONEncoder().encode(values) { UserDefaults.standard.set(data, forKey: "keyMappings.v1") }
         cancelRepeats()
+        revision += 1
         refresh()
     }
 
     func refresh() {
         let needsListener = MappedButton.all.contains { binding($0).usesListener }
-        if listeningAllowed && manager == nil { startListener() }
+        if needsListener && listeningAllowed && AXIsProcessTrusted() {
+            if manager == nil { startListener() }
+        } else { stopListener() }
         listenerOK = manager != nil && listeningAllowed && AXIsProcessTrusted()
+        let entries: HIDMappings = MappedButton.all.compactMap { button in
+            let value = binding(button)
+            guard value.kind != .original else { return nil }
+            // Unassigned usage suppresses a custom key even while permission is missing.
+            let target = value.kind == .key && !value.usesListener ? value.usage : 0
+            return [src: (UInt64(12) << 32) | button.usage, dst: (UInt64(7) << 32) | target]
+        }
+        let sources = Set(entries.compactMap { $0[src] })
         let services = (IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []).filter {
             (IOHIDServiceClientCopyProperty($0, "VendorID" as CFString) as? NSNumber)?.intValue == 6353 &&
             (IOHIDServiceClientCopyProperty($0, "ProductID" as CFString) as? NSNumber)?.intValue == 37968
@@ -114,35 +139,45 @@ final class KeyMapping {
         connected = !services.isEmpty
         var present = Set<UInt64>()
         var applied = true
+        needsApply = false
+        activeShortcuts = listenerOK ? Set(MappedButton.all.filter { binding($0).usesListener }.map { $0.code }) : []
         for service in services {
             guard let id = (IOHIDServiceClientGetRegistryID(service) as? NSNumber)?.uint64Value else { continue }
             present.insert(id)
-            let current = IOHIDServiceClientCopyProperty(service, property) as? NSArray ?? []
-            if snapshots[id] == nil { snapshots[id] = (service, current, nil) }
-            // Preserve unrelated mappings; only the listed physical buttons belong to this App.
-            let owned = Set(MappedButton.all.map { (UInt64(12) << 32) | $0.usage })
-            var entries = (snapshots[id]!.original as? [[String: UInt64]] ?? []).filter { !owned.contains($0[src] ?? 0) }
-            for button in MappedButton.all {
-                let value = binding(button)
-                guard value.kind != .original else { continue }
-                // No event (usage 0) suppresses native action for custom shortcuts/scrolling.
-                // Keep the native function if permission for a custom action is missing.
-                guard !value.usesListener || listenerOK else { continue }
-                let target = value.kind == .key && !value.usesListener ? value.usage : 0
-                entries.append([src: (UInt64(12) << 32) | button.usage, dst: (UInt64(7) << 32) | target])
-            }
-            let desired = entries as NSArray
-            if !current.isEqual(desired) {
-                let ok = IOHIDServiceClientSetProperty(service, property, desired)
-                let readBack = IOHIDServiceClientCopyProperty(service, property) as? NSArray ?? []
-                if ok && readBack.isEqual(desired) { snapshots[id]?.applied = desired }
+            var current = IOHIDServiceClientCopyProperty(service, property) as? HIDMappings ?? []
+            var snapshot = snapshots[id] ?? Snapshot(service: service, original: current)
+            // Apply only on connection or explicit save; never fight another remapper.
+            if snapshot.revision != revision {
+                snapshot.original = restored(current, snapshot: snapshot)
+                snapshot.owned = entries
+                let desired = snapshot.original.filter { !sources.contains($0[src] ?? 0) } + entries
+                let ok = current == desired || IOHIDServiceClientSetProperty(service, property, desired as CFArray)
+                current = IOHIDServiceClientCopyProperty(service, property) as? HIDMappings ?? []
+                if ok && current == desired { snapshot.revision = revision }
                 else { applied = false }
-            } else { snapshots[id]?.applied = desired }
+                snapshots[id] = snapshot
+            }
+            needsApply = needsApply || !entries.allSatisfy { current.contains($0) }
+            // Emit a custom action only after its native action is confirmed suppressed.
+            activeShortcuts = activeShortcuts.filter { code in
+                guard let button = MappedButton.all.first(where: { $0.code == code }) else { return false }
+                return current.contains([src: (UInt64(12) << 32) | button.usage, dst: UInt64(7) << 32])
+            }
         }
+        if !connected { activeShortcuts.removeAll(); cancelRepeats(); held.removeAll() }
         snapshots = snapshots.filter { present.contains($0.key) }
         status = !connected ? "设置已保存 · 等待遥控器连接" : !applied ? "按键设置未能生效，请检查权限" :
+            needsApply ? "按键设置被其他程序更改 · 保存可重新应用" :
             needsListener && !listenerOK ? "基础按键已生效 · 组合快捷键需要输入监控和辅助功能权限" : "按键已生效 · 重连后自动恢复"
     }
+
+    private func restored(_ current: HIDMappings, snapshot: Snapshot) -> HIDMappings {
+        let unchanged = snapshot.owned.filter { current.contains($0) }
+        let sources = Set(unchanged.compactMap { $0[src] })
+        return current.filter { !unchanged.contains($0) } + snapshot.original.filter { sources.contains($0[src] ?? 0) }
+    }
+
+    func requestListeningAccess() { _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) }
 
     private func startListener() {
         let m = IOHIDManagerCreate(kCFAllocatorDefault, 0)
@@ -176,14 +211,13 @@ final class KeyMapping {
         held = pressed
         for code in added {
             guard let button = MappedButton.all.first(where: { $0.code == code }) else { continue }
-            onPress(code)
             let value = binding(button)
-            guard value.usesListener, listenerOK, canPerform() else { continue }
+            guard activeShortcuts.contains(code), canPerform() else { continue }
             perform(value)
             // Only scrolling repeats; Enter and modifier shortcuts execute once per press.
             if value.kind == .scrollUp || value.kind == .scrollDown {
                 let timer = Timer(timeInterval: 0.09, repeats: true) { [weak self] _ in
-                    guard let self, self.held.contains(code), self.listenerOK, self.canPerform() else { return }
+                    guard let self, self.held.contains(code), self.activeShortcuts.contains(code), self.canPerform() else { return }
                     self.perform(value)
                 }
                 timer.fireDate = Date().addingTimeInterval(0.4)
@@ -212,20 +246,26 @@ final class KeyMapping {
 
     private func cancelRepeats() { repeats.values.forEach { $0.invalidate() }; repeats.removeAll() }
 
-    func stop() {
+    private func stopListener() {
         cancelRepeats(); held.removeAll()
         if let manager {
             IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
             IOHIDManagerClose(manager, 0)
         }
         manager = nil
+        listenerOK = false
+        activeShortcuts.removeAll()
+    }
+
+    func stop() {
+        stopListener()
         for snapshot in snapshots.values {
-            let current = IOHIDServiceClientCopyProperty(snapshot.service, property) as? NSArray ?? []
-            // Do not undo changes made by another tool after our last application.
-            if let applied = snapshot.applied, current.isEqual(applied) {
-                _ = IOHIDServiceClientSetProperty(snapshot.service, property, snapshot.original)
-            }
+            let current = IOHIDServiceClientCopyProperty(snapshot.service, property) as? HIDMappings ?? []
+            let original = restored(current, snapshot: snapshot)
+            if current != original { _ = IOHIDServiceClientSetProperty(snapshot.service, property, original as CFArray) }
         }
         snapshots.removeAll()
+        connected = false
+        status = "按键映射已停止"
     }
 }

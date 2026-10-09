@@ -27,11 +27,11 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
     private var fnUps = 0
     private var allowPrompted = false
     private var signalSources: [DispatchSourceSignal] = []
+    private var lastStatus: Data?
     private let statusURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/RemoteVibe/status.json")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard NSRunningApplication.runningApplications(withBundleIdentifier: "local.ben.RemoteVibe").count <= 1 else { NSApplication.shared.terminate(nil); return }
         try? FileManager.default.createDirectory(at: statusURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         buildUI()
         mapping.canPerform = { [weak self] in self?.active == false }
@@ -48,6 +48,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
         remote.onEnd = { [weak self] normal in self?.end(normal) }
         remote.start()
         poll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.refresh() }
+        poll?.tolerance = 0.2
         refresh()
         show()
     }
@@ -176,6 +177,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
     }
 
     @objc private func show() { window.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps: true) }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
     @objc private func allowFn() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
@@ -185,8 +187,8 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
     @objc private func quit() { NSApplication.shared.terminate(nil) }
 
     private func save() {
-        let status: [String: Any] = [
-            "updated": ISO8601DateFormatter().string(from: Date()), "mode": "wechat-hold-fn",
+        var status: [String: Any] = [
+            "mode": "wechat-hold-fn",
             "bluetoothAuthorization": CBCentralManager.authorization.rawValue,
             "accessibility": AXIsProcessTrusted(), "connected": remote.ready,
             "microphoneReady": mic.available, "recording": remote.streaming,
@@ -195,9 +197,14 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
             "completedSessions": completedSessions, "status": message.stringValue,
             "keyMappingStatus": mapping.status, "keyMappingConnected": mapping.connected,
             "inputMonitoring": mapping.listeningAllowed,
+            "shortcutListener": mapping.listening,
             "defaultInput": AudioDevices.string(AudioDevices.defaultInput(), kAudioObjectPropertyName) ?? "none"
         ]
-        if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) { try? data.write(to: statusURL, options: .atomic) }
+        guard let snapshot = try? JSONSerialization.data(withJSONObject: status, options: [.sortedKeys]), snapshot != lastStatus else { return }
+        status["updated"] = ISO8601DateFormatter().string(from: Date())
+        if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {
+            do { try data.write(to: statusURL, options: .atomic); lastStatus = snapshot } catch { /* Diagnostics must not interrupt input. */ }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -208,6 +215,13 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
 @main
 enum Main {
     static func main() {
+        // Reject a second instance before it can acquire devices or run cleanup.
+        if let existing = NSRunningApplication.runningApplications(withBundleIdentifier: "local.ben.RemoteVibe")
+            .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
+            if let url = existing.bundleURL { NSWorkspace.shared.open(url) }
+            else { existing.activate(options: []) }
+            return
+        }
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         let delegate = WeChatApp()

@@ -143,7 +143,7 @@ final class KeyMappingView: NSView {
         }
         let voice = selected == 0
         nameLabel.stringValue = selectedButton?.name ?? "语音键"
-        currentLabel.stringValue = voice ? "按住说话，松开后由微信转成文字。" : "当前生效：\(mapping.binding(selectedButton!).title)"
+        currentLabel.stringValue = voice ? "按住说话，松开后由微信转成文字。" : "已保存：\(mapping.binding(selectedButton!).title)"
         let value = selectedBinding
         actionPicker.selectItem(at: presets.firstIndex(where: { $0.1 == value }) ?? presets.count - 1)
         actionPicker.isEnabled = !voice; resetButton.isEnabled = !voice
@@ -160,7 +160,6 @@ final class KeyMappingView: NSView {
         hint.stringValue = selected == 0 ? "语音功能已固定保留，当前无需设置。" : custom ?
             "例如：勾选 Control、Shift，再选择 ↑。\n快捷键会发送给你正在使用的软件。" :
             "配置会自动记住。切换按键后，未保存的修改也会保留；点保存后一起生效。"
-        saveButton.isEnabled = drafts != mapping.bindings
     }
 
     @objc private func actionChanged() {
@@ -199,13 +198,14 @@ final class KeyMappingView: NSView {
     }
 
     @objc private func allowListener() {
+        mapping.requestListeningAccess()
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
     }
 
     func refreshStatus() {
         let dirty = drafts != mapping.bindings
         liveStatus.stringValue = dirty ? "有未保存的修改" : mapping.status
-        permissionButton.isHidden = mapping.listeningAllowed
-        saveButton.isEnabled = dirty
+        permissionButton.isHidden = mapping.listeningAllowed || !MappedButton.all.contains { (drafts[String($0.code)] ?? $0.initial).usesListener }
+        saveButton.isEnabled = dirty || mapping.needsApply
     }
 }

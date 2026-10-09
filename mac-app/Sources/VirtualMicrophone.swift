@@ -37,6 +37,7 @@ enum AudioDevices {
 final class VirtualMicrophone {
     private var device: AudioDeviceID?
     private var ioProc: AudioDeviceIOProcID?
+    private var running = false
     private let lock = NSLock()
     private var ring = [Float](repeating: 0, count: 48000 * 4)
     private var readIndex = 0
@@ -63,7 +64,6 @@ final class VirtualMicrophone {
         var usageAddress = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyIOProcStreamUsage, mScope: kAudioObjectPropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
         let usageStatus = AudioObjectSetPropertyData(id, &usageAddress, 0, nil, UInt32(MemoryLayout<AudioHardwareIOProcStreamUsage>.size), &inputUsage)
         guard usageStatus == noErr else { AudioDeviceDestroyIOProcID(id, proc); return false }
-        guard AudioDeviceStart(id, proc) == noErr else { AudioDeviceDestroyIOProcID(id, proc); return false }
         device = id
         ioProc = proc
         recoverInput()
@@ -71,7 +71,7 @@ final class VirtualMicrophone {
     }
 
     func begin() -> Bool {
-        guard connect(), let device else { return false }
+        guard connect(), let device, let ioProc else { return false }
         let original = AudioDevices.defaultInput()
         priorUID = original != device ? AudioDevices.string(original, kAudioDevicePropertyDeviceUID) : nil
         if let priorUID { UserDefaults.standard.set(priorUID, forKey: "restoreInputUID") }
@@ -82,6 +82,8 @@ final class VirtualMicrophone {
         draining = false; enabled = true
         dcX = 0; dcY = 0; previousSample = 0
         lock.unlock()
+        guard AudioDeviceStart(device, ioProc) == noErr else { end(); return false }
+        running = true
         return true
     }
 
@@ -131,6 +133,8 @@ final class VirtualMicrophone {
 
     func end() {
         lock.lock(); enabled = false; draining = false; count = 0; lock.unlock()
+        if running, let device, let ioProc { AudioDeviceStop(device, ioProc) }
+        running = false
         recoverInput()
     }
 
@@ -148,7 +152,7 @@ final class VirtualMicrophone {
 
     func stop() {
         end()
-        if let device, let ioProc { AudioDeviceStop(device, ioProc); AudioDeviceDestroyIOProcID(device, ioProc) }
+        if let device, let ioProc { AudioDeviceDestroyIOProcID(device, ioProc) }
         ioProc = nil; device = nil
     }
 }

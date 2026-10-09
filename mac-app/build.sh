@@ -12,6 +12,7 @@ xcrun swiftc -swift-version 5 -parse-as-library -O -target arm64-apple-macos15.0
   -o "$app/Contents/MacOS/RemoteVibe"
 cp Info.plist "$app/Contents/Info.plist"
 cp THIRD_PARTY_NOTICES.md "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
+cp ../LICENSE "$app/Contents/Resources/LICENSE"
 codesign --force --sign - --timestamp=none \
   --requirements '=designated => identifier "local.ben.RemoteVibe"' "$app"
 codesign --verify --deep --strict "$app"

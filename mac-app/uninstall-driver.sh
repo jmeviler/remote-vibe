@@ -1,5 +1,6 @@
 #!/bin/zsh
 set -euo pipefail
+(( EUID == 0 )) || { print 'Run with sudo: sudo zsh uninstall-driver.sh'; exit 1; }
 cd "${0:A:h}"
 target_bundle="/Library/Audio/Plug-Ins/HAL/RemoteVibeMic.driver"
 [[ -d "$target_bundle" ]] || { print 'Driver is not installed.'; exit 0; }

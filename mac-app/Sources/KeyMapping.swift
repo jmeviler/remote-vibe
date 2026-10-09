@@ -28,11 +28,14 @@ struct MappingKey {
 }
 
 struct KeyBinding: Codable, Equatable {
-    enum Kind: String, Codable { case original, disabled, key, scrollUp, scrollDown }
+    enum Kind: String, Codable { case original, disabled, key, scrollUp, scrollDown, nextDisplay, nextWindow }
     var kind: Kind
     var usage: UInt64 = 0x28
     var modifiers: UInt64 = 0
-    var usesListener: Bool { kind == .scrollUp || kind == .scrollDown || (kind == .key && modifiers != 0) }
+    var usesListener: Bool {
+        kind == .scrollUp || kind == .scrollDown || kind == .nextDisplay || kind == .nextWindow ||
+        (kind == .key && (modifiers != 0 || usage == 0x29))
+    }
     var key: MappingKey? { MappingKey.all.first { $0.usage == usage } }
     var title: String {
         switch kind {
@@ -40,6 +43,8 @@ struct KeyBinding: Codable, Equatable {
         case .disabled: return "不执行"
         case .scrollUp: return "向上滚动"
         case .scrollDown: return "向下滚动"
+        case .nextDisplay: return "切换屏幕"
+        case .nextWindow: return "切换当前屏幕窗口"
         case .key:
             let flags = CGEventFlags(rawValue: modifiers)
             let prefix = [(CGEventFlags.maskControl, "⌃"), (.maskAlternate, "⌥"), (.maskShift, "⇧"), (.maskCommand, "⌘")]
@@ -54,7 +59,9 @@ struct MappedButton {
     let name: String
     let usage: UInt64
     var initial: KeyBinding {
-        let keys: [UInt8: UInt64] = [3:0x52, 4:0x51, 5:0x50, 6:0x4F, 7:0x28, 8:0x28, 11:0x2A]
+        if code == 10 { return KeyBinding(kind: .nextWindow) }
+        if code == 14 { return KeyBinding(kind: .nextDisplay) }
+        let keys: [UInt8: UInt64] = [3:0x52, 4:0x51, 5:0x50, 6:0x4F, 7:0x29, 8:0x28, 11:0x2A]
         return keys[code].map { KeyBinding(kind: .key, usage: $0) } ?? KeyBinding(kind: .original)
     }
     // Report-array indices and consumer usages from this remote's HID descriptor.
@@ -79,6 +86,8 @@ final class KeyMapping {
         var revision = -1
     }
     private let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
+    private let desktop = DesktopActions()
+    private var actionFeedback: (text: String, until: Date)?
     private var manager: IOHIDManager?
     private var held = Set<UInt8>()
     private var repeats: [UInt8: Timer] = [:]
@@ -111,6 +120,8 @@ final class KeyMapping {
     func binding(_ button: MappedButton) -> KeyBinding { bindings[String(button.code)] ?? button.initial }
 
     func save(_ values: Bindings) {
+        cancelPendingActions()
+        actionFeedback = nil
         bindings = values
         if let data = try? JSONEncoder().encode(values) { UserDefaults.standard.set(data, forKey: "keyMappings.v1") }
         cancelRepeats()
@@ -136,6 +147,7 @@ final class KeyMapping {
             (IOHIDServiceClientCopyProperty($0, "VendorID" as CFString) as? NSNumber)?.intValue == 6353 &&
             (IOHIDServiceClientCopyProperty($0, "ProductID" as CFString) as? NSNumber)?.intValue == 37968
         }
+        if connected && services.isEmpty { cancelPendingActions() }
         connected = !services.isEmpty
         var present = Set<UInt64>()
         var applied = true
@@ -168,7 +180,9 @@ final class KeyMapping {
         snapshots = snapshots.filter { present.contains($0.key) }
         status = !connected ? "设置已保存 · 等待遥控器连接" : !applied ? "按键设置未能生效，请检查权限" :
             needsApply ? "按键设置被其他程序更改 · 保存可重新应用" :
-            needsListener && !listenerOK ? "基础按键已生效 · 组合快捷键需要输入监控和辅助功能权限" : "按键已生效 · 重连后自动恢复"
+            needsListener && !listenerOK ? "Esc、组合键和桌面动作需要输入监控及辅助功能权限" : "按键已生效 · 重连后自动恢复"
+        if connected && applied && !needsApply && (!needsListener || listenerOK),
+           let feedback = actionFeedback, feedback.until > Date() { status = feedback.text }
     }
 
     private func restored(_ current: HIDMappings, snapshot: Snapshot) -> HIDMappings {
@@ -213,12 +227,12 @@ final class KeyMapping {
             guard let button = MappedButton.all.first(where: { $0.code == code }) else { continue }
             let value = binding(button)
             guard activeShortcuts.contains(code), canPerform() else { continue }
-            perform(value)
-            // Only scrolling repeats; Enter and modifier shortcuts execute once per press.
+            perform(value, button: code)
+            // Only scrolling repeats here; Esc, shortcuts and desktop actions fire once.
             if value.kind == .scrollUp || value.kind == .scrollDown {
                 let timer = Timer(timeInterval: 0.09, repeats: true) { [weak self] _ in
                     guard let self, self.held.contains(code), self.activeShortcuts.contains(code), self.canPerform() else { return }
-                    self.perform(value)
+                    self.perform(value, button: code)
                 }
                 timer.fireDate = Date().addingTimeInterval(0.4)
                 repeats[code] = timer
@@ -227,26 +241,52 @@ final class KeyMapping {
         }
     }
 
-    private func perform(_ value: KeyBinding) {
+    private func perform(_ value: KeyBinding, button: UInt8) {
         guard AXIsProcessTrusted() else { return }
-        if value.kind == .scrollUp || value.kind == .scrollDown {
+        if value.kind == .nextDisplay || value.kind == .nextWindow {
+            desktop.perform(nextDisplay: value.kind == .nextDisplay, allowed: { [weak self] in
+                guard let self else { return false }
+                return self.connected && self.listenerOK && self.activeShortcuts.contains(button) && self.canPerform()
+            }, completion: { [weak self] message in
+                self?.actionFeedback = (message, Date().addingTimeInterval(5))
+                self?.status = message
+            })
+        } else if value.kind == .scrollUp || value.kind == .scrollDown {
             CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
                     wheel1: value.kind == .scrollUp ? 3 : -3, wheel2: 0, wheel3: 0)?.post(tap: .cghidEventTap)
-        } else if let key = value.key {
+        } else if value.kind == .key, let key = value.key {
             let source = CGEventSource(stateID: .privateState)
-            let flags = CGEventSource.flagsState(.combinedSessionState).union(CGEventFlags(rawValue: value.modifiers))
+            var flags = CGEventSource.flagsState(.combinedSessionState)
+            let modifiers: [(CGEventFlags, CGKeyCode)] = [(.maskControl, 59), (.maskAlternate, 58), (.maskShift, 56), (.maskCommand, 55)]
+                .filter { CGEventFlags(rawValue: value.modifiers).contains($0.0) && !flags.contains($0.0) }
+            var events: [CGEvent] = []
+            for (flag, code) in modifiers {
+                flags.insert(flag)
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true) else { return }
+                event.type = .flagsChanged; event.flags = flags; events.append(event)
+            }
             guard let down = CGEvent(keyboardEventSource: source, virtualKey: key.code, keyDown: true),
                   let up = CGEvent(keyboardEventSource: source, virtualKey: key.code, keyDown: false) else { return }
             down.flags = flags; up.flags = flags
-            down.setIntegerValueField(.eventSourceUserData, value: 0x524D564B)
-            up.setIntegerValueField(.eventSourceUserData, value: 0x524D564B)
-            down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
+            events += [down, up]
+            for (flag, code) in modifiers.reversed() {
+                flags.remove(flag)
+                guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false) else { return }
+                event.type = .flagsChanged; event.flags = flags; events.append(event)
+            }
+            for event in events {
+                event.setIntegerValueField(.eventSourceUserData, value: 0x524D564B)
+                event.post(tap: .cghidEventTap)
+            }
         }
     }
+
+    func cancelPendingActions() { desktop.cancel() }
 
     private func cancelRepeats() { repeats.values.forEach { $0.invalidate() }; repeats.removeAll() }
 
     private func stopListener() {
+        if manager != nil { cancelPendingActions() }
         cancelRepeats(); held.removeAll()
         if let manager {
             IOHIDManagerUnscheduleFromRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
@@ -258,6 +298,7 @@ final class KeyMapping {
     }
 
     func stop() {
+        cancelPendingActions()
         stopListener()
         for snapshot in snapshots.values {
             let current = IOHIDServiceClientCopyProperty(snapshot.service, property) as? HIDMappings ?? []

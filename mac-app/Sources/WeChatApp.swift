@@ -60,6 +60,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
         sessionID = UUID()
         let id = sessionID
         active = true; released = false; drainStarted = false
+        mapping.cancelPendingActions()
         item.button?.title = "● 语音"
         message.stringValue = "正在准备微信语音输入…"
         // Change the input before Fn starts WeChat's capture session.

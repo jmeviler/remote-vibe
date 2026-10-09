@@ -40,7 +40,7 @@ final class KeyMappingView: NSView {
     private let hint = NSTextField(wrappingLabelWithString: "")
     private let saveButton = NSButton(title: "保存并生效", target: nil, action: nil)
     private let resetButton = NSButton(title: "恢复此键默认", target: nil, action: nil)
-    private let permissionButton = NSButton(title: "允许组合快捷键", target: nil, action: nil)
+    private let permissionButton = NSButton(title: "允许按键控制", target: nil, action: nil)
     private let liveStatus = NSTextField(wrappingLabelWithString: "")
     private var modifierButtons: [(NSButton, CGEventFlags)] = []
     private var remoteButtons: [UInt8: RemoteKeyButton] = [:]
@@ -53,8 +53,13 @@ final class KeyMappingView: NSView {
         ("← 方向左", .init(kind: .key, usage: 0x50)), ("→ 方向右", .init(kind: .key, usage: 0x4F)),
         ("Tab 下一项", .init(kind: .key, usage: 0x2B)),
         ("Shift + Tab 上一项", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags.maskShift.rawValue)),
+        ("Command + Tab 切换应用", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags.maskCommand.rawValue)),
+        ("Command + Shift + Tab 反向切换应用", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags([.maskCommand, .maskShift]).rawValue)),
+        ("Control + Tab", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags.maskControl.rawValue)),
+        ("Control + Shift + Tab", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags([.maskControl, .maskShift]).rawValue)),
         ("Space 空格", .init(kind: .key, usage: 0x2C)),
         ("向上滚动", .init(kind: .scrollUp)), ("向下滚动", .init(kind: .scrollDown)),
+        ("切换屏幕", .init(kind: .nextDisplay)), ("切换当前屏幕窗口", .init(kind: .nextWindow)),
         ("自定义按键 / 组合快捷键…", nil)
     ]
 
@@ -99,7 +104,7 @@ final class KeyMappingView: NSView {
         actionPicker.target = self; actionPicker.action = #selector(actionChanged)
         place(actionPicker, y: 154, h: 32)
         place(modifierLabel, y: 207, h: 22)
-        for (index, entry) in [("Control", CGEventFlags.maskControl), ("Shift", .maskShift), ("Option", .maskAlternate), ("Command", .maskCommand)].enumerated() {
+        for (index, entry) in [("⌃ Control", CGEventFlags.maskControl), ("⇧ Shift", .maskShift), ("⌥ Option", .maskAlternate), ("⌘ Command", .maskCommand)].enumerated() {
             let button = NSButton(checkboxWithTitle: entry.0, target: self, action: #selector(customChanged))
             button.frame = NSRect(x: 330 + CGFloat(index % 2) * 180, y: 236 + CGFloat(index / 2) * 30, width: 165, height: 24)
             addSubview(button); modifierButtons.append((button, entry.1))
@@ -154,12 +159,24 @@ final class KeyMappingView: NSView {
     }
 
     private func displayOptions() {
+        currentLabel.stringValue = selected == 0 ? "按住说话，松开后由微信转成文字。" :
+            "当前选择：\(selectedBinding.title)\n已保存：\(mapping.binding(selectedButton!).title)"
+        if let selectedButton { remoteButtons[selected]?.toolTip = "\(selectedButton.name) → \(selectedBinding.title)" }
         let custom = selected != 0 && actionPicker.indexOfSelectedItem == presets.count - 1
         modifierLabel.isHidden = !custom; keyPicker.isHidden = !custom
         modifierButtons.forEach { $0.0.isHidden = !custom }
-        hint.stringValue = selected == 0 ? "语音功能已固定保留，当前无需设置。" : custom ?
-            "例如：勾选 Control、Shift，再选择 ↑。\n快捷键会发送给你正在使用的软件。" :
-            "配置会自动记住。切换按键后，未保存的修改也会保留；点保存后一起生效。"
+        if selected == 0 { hint.stringValue = "语音功能已固定保留，当前无需设置。" }
+        else if selectedBinding.kind == .nextDisplay {
+            hint.stringValue = "切到下一块屏幕的可见窗口，鼠标随之移入。\n不移动窗口，不切换桌面空间；按一次切换一次。"
+        } else if selectedBinding.kind == .nextWindow {
+            hint.stringValue = "在当前屏幕的可见普通窗口间循环。\n跳过最小化窗口；按一次切换一次。"
+        } else if custom || selectedBinding.modifiers != 0 {
+            hint.stringValue = "可多选修饰键，例如 Control + Shift + ↑。\n按一次发送一次；实际用途由当前软件决定。"
+        } else if selectedBinding.kind == .key && selectedBinding.usage == 0x29 {
+            hint.stringValue = "发送一次 Esc；长按不连发。\n可用于当前软件支持的取消或停止操作。"
+        } else {
+            hint.stringValue = "切换按键后，未保存的修改也会保留。\n点击「保存并生效」后一起应用并记住。"
+        }
     }
 
     @objc private func actionChanged() {
@@ -198,14 +215,23 @@ final class KeyMappingView: NSView {
     }
 
     @objc private func allowListener() {
-        mapping.requestListeningAccess()
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
+        let pane: String
+        if !mapping.listeningAllowed {
+            mapping.requestListeningAccess()
+            pane = "Privacy_ListenEvent"
+        } else {
+            _ = AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+            pane = "Privacy_Accessibility"
+        }
+        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
     }
 
     func refreshStatus() {
         let dirty = drafts != mapping.bindings
         liveStatus.stringValue = dirty ? "有未保存的修改" : mapping.status
-        permissionButton.isHidden = mapping.listeningAllowed || !MappedButton.all.contains { (drafts[String($0.code)] ?? $0.initial).usesListener }
+        permissionButton.isHidden = (mapping.listeningAllowed && AXIsProcessTrusted()) ||
+            !MappedButton.all.contains { (drafts[String($0.code)] ?? $0.initial).usesListener }
+        permissionButton.title = !mapping.listeningAllowed ? "允许输入监控" : "允许辅助功能"
         saveButton.isEnabled = dirty || mapping.needsApply
     }
 }

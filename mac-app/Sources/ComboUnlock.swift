@@ -253,6 +253,7 @@ final class ComboUnlock {
     }
 
     private func start(_ next: Mode) -> Bool {
+        guard mapping.profile == .chromecast else { return false }
         guard !locked, ScreenSession.locked == false, mode == .idle else { return false }
         guard !voiceActive() else { status = "请先结束本次语音。"; onChange?(); return false }
         guard mapping.connected && mapping.listeningAllowed && AXIsProcessTrusted() else {
@@ -350,10 +351,11 @@ final class ComboUnlock {
 
     private func syncCapture() {
         let capturing = locked || mode == .recording || mode == .confirming || mode == .practice
-        mapping.capture(capturing ? Self.buttons : [])
+        mapping.capture(capturing ? Set(mapping.buttons.map(\.code).filter { $0 != 1 }) : [])
     }
 
     private func press(_ code: UInt8) {
+        guard mapping.profile == .chromecast else { return }
         guard mapping.captureReady else { matcher.reset(); return }
         if mode == .recording || mode == .confirming {
             if !Self.buttons.contains(code) || (lastRecordedAt > 0 && now - lastRecordedAt > 3) { recorded.removeAll() }

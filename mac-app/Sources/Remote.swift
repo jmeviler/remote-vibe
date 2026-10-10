@@ -2,6 +2,7 @@ import Foundation
 import CoreBluetooth
 
 final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+    let profile: RemoteProfile
     var onStatus: (String) -> Void = { _ in }
     var onBegin: () -> Void = {}
     var onSamples: ([Int16], Int) -> Void = { _, _ in }
@@ -12,7 +13,8 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var subscribed = Set<String>()
     private var handshakeSent = false
     private var stopping = false
-    private var proto = ATVVProtocol()
+    private var proto: ATVVProtocol
+    private var modelConfirmed = false
     private var streamID: UInt8 = 0
     private var keepAlive: Timer?
     private var limit: Timer?
@@ -21,6 +23,17 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private(set) var ready = false
     private(set) var streaming = false
     private(set) var frameCount = 0
+
+    var protocolSummary: String {
+        guard let caps = proto.capabilities, let codec = proto.codec else { return "等待协商" }
+        return "ATVV \(caps.version) · \(codec.sampleRate) Hz · \(caps.frameSize) bytes"
+    }
+
+    init(profile: RemoteProfile = .chromecast) {
+        self.profile = profile
+        proto = ATVVProtocol(profile: profile)
+        super.init()
+    }
 
     func start() { central = CBCentralManager(delegate: self, queue: .main) }
 
@@ -43,17 +56,20 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         else {
             ready = false
             finish(normal: false)
+            command = nil
+            peripheral = nil
+            connectionTimeout?.invalidate()
             onStatus(central.state == .unauthorized ? "请允许蓝牙访问" : "等待蓝牙开启")
         }
     }
 
     private func find() {
         guard !stopping, central.state == .poweredOn, peripheral == nil else { return }
-        let matches = central.retrieveConnectedPeripherals(withServices: [CBUUID(string: ATVVProtocol.serviceUUID)])
-            .filter { $0.name == "Chromecast Remote" }
+        let matches = central.retrieveConnectedPeripherals(withServices: [CBUUID(string: ATVVProtocol.serviceUUID), CBUUID(string: "1812")])
+            .filter { profile.accepts(name: $0.name) }
         if matches.count == 1 { connect(matches[0]); return }
         if matches.count > 1 { onStatus("发现多个遥控器，请只连接要使用的那一个"); return }
-        onStatus("寻找 Chromecast Remote；按一下遥控器可唤醒")
+        onStatus("等待连接，按键可唤醒")
         central.scanForPeripherals(withServices: [CBUUID(string: ATVVProtocol.serviceUUID)])
         reconnect?.invalidate()
         reconnect = Timer.scheduledTimer(withTimeInterval: 5, repeats: false) { [weak self] _ in self?.find() }
@@ -74,18 +90,20 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func centralManager(_ central: CBCentralManager, didDiscover p: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        if p.name == "Chromecast Remote", peripheral == nil { connect(p) }
+        if profile.accepts(name: p.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String), peripheral == nil { connect(p) }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect p: CBPeripheral) {
-        proto = ATVVProtocol()
+        guard p === peripheral, !stopping else { return }
+        proto = ATVVProtocol(profile: profile)
         subscribed.removeAll()
         handshakeSent = false
-        p.discoverServices([CBUUID(string: ATVVProtocol.serviceUUID)])
+        modelConfirmed = profile == .chromecast
+        p.discoverServices([CBUUID(string: ATVVProtocol.serviceUUID)] + (profile == .xiaomiRC003 ? [CBUUID(string: "180A")] : []))
     }
 
-    func centralManager(_ central: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) { disconnected() }
-    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) { disconnected() }
+    func centralManager(_ central: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) { if p === peripheral { disconnected() } }
+    func centralManager(_ central: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) { if p === peripheral { disconnected() } }
 
     private func disconnected() {
         ready = false
@@ -100,16 +118,22 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
-        guard error == nil, let service = p.services?.first else { onStatus("读取语音服务失败"); return }
+        guard p === peripheral else { return }
+        guard error == nil, let service = p.services?.first(where: { $0.uuid == CBUUID(string: ATVVProtocol.serviceUUID) }) else { onStatus("读取语音服务失败"); return }
         p.discoverCharacteristics(nil, for: service)
+        if profile == .xiaomiRC003, let info = p.services?.first(where: { $0.uuid == CBUUID(string: "180A") }) {
+            p.discoverCharacteristics([CBUUID(string: "2A24")], for: info)
+        }
     }
 
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        guard p === peripheral else { return }
         guard error == nil else { onStatus("读取语音通道失败"); return }
         for c in service.characteristics ?? [] {
             switch c.uuid.uuidString.uppercased() {
             case ATVVProtocol.txUUID: command = c
             case ATVVProtocol.rxUUID, ATVVProtocol.controlUUID: p.setNotifyValue(true, for: c)
+            case "2A24": p.readValue(for: c)
             default: break
             }
         }
@@ -117,13 +141,14 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateNotificationStateFor c: CBCharacteristic, error: Error?) {
+        guard p === peripheral else { return }
         guard error == nil, c.isNotifying else { onStatus("订阅遥控器语音失败"); return }
         subscribed.insert(c.uuid.uuidString.uppercased())
         negotiate()
     }
 
     private func negotiate() {
-        guard command != nil, subscribed.count == 2, !handshakeSent else { return }
+        guard command != nil, subscribed.count == 2, modelConfirmed, !handshakeSent else { return }
         handshakeSent = true
         write(proto.getCapabilitiesCommand)
     }
@@ -134,7 +159,12 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) {
-        guard error == nil, let data = c.value else { return }
+        guard p === peripheral, error == nil, let data = c.value else { return }
+        if c.uuid == CBUUID(string: "2A24") {
+            modelConfirmed = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) == "RC003"
+            if modelConfirmed { negotiate() } else { onStatus("这款小米型号暂未适配，仅支持 RC003") }
+            return
+        }
         if c.uuid.uuidString.uppercased() == ATVVProtocol.rxUUID {
             guard streaming, let decoded = proto.decodeAudio(data), let codec = proto.codec else { return }
             frameCount += 1
@@ -143,11 +173,12 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
         switch proto.parseControl(data) {
         case .capabilities(let capabilities):
+            guard handshakeSent, !ready else { return }
             do {
                 try proto.acceptCapabilities(capabilities)
                 ready = true
                 connectionTimeout?.invalidate()
-                if let close = try? proto.micCloseCommand(streamID: 0) { write(close) }
+                if profile == .chromecast, let close = try? proto.micCloseCommand(streamID: 0) { write(close) }
                 onStatus("遥控器已连接")
             } catch { onStatus(error.localizedDescription) }
         case .startSearch:
@@ -156,6 +187,8 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 if let data = try? proto.micOpenCommand() { write(data) }
             }
         case .audioStart(_, let codec, let sid):
+            guard ready, !streaming else { return }
+            guard profile != .xiaomiRC003 || codec == .adpcm16k else { close(); onStatus("小米切换到不支持的音频编码"); return }
             proto.beginAudioStream(codec: codec)
             streamID = sid
             if !streaming {
@@ -165,10 +198,10 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
                 // onBegin can decline the session if recognition is unavailable.
                 guard streaming else { return }
                 keepAlive?.invalidate()
-                keepAlive = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
+                if profile == .chromecast { keepAlive = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
                     guard let self, self.streaming, let data = try? self.proto.keepAliveCommand(streamID: self.streamID) else { return }
                     self.write(data)
-                }
+                } }
                 limit?.invalidate()
                 limit = Timer.scheduledTimer(withTimeInterval: 55, repeats: false) { [weak self] _ in
                     guard let self else { return }

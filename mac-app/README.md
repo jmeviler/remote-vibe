@@ -7,15 +7,17 @@ zsh build.sh
 open "build/Remote Vibe.app"
 ```
 
-点击菜单栏「遥控语音 → 打开遥控语音」进入设置。选择图上的按键、选择动作，然后保存。语音按钮固定为按住 Fn 的微信语音输入流程。
+点击菜单栏「遥控语音 → 打开遥控语音」进入设置，选择当前使用的 Google 或小米 RC003，一次使用一只。两种型号均采用按住 Fn 的微信语音输入流程。配置图随型号切换，两种均可选择图上的按键、选择动作并保存，各自的配置和草稿独立保留。
 
 ## 实现
 
-- `KeyMapping.swift`：键位定义、本地配置、原生 HID 映射及组合快捷键。
+- `KeyMapping.swift`：键位定义、本地配置、分型号 HID 映射、独立配置及组合快捷键。
 - `KeyMappingView.swift`：AppKit 遥控器布局和配置界面，图形由原生控件绘制。
 - `DesktopActions.swift`：按需查询可见窗口、双屏切换与稳定的同屏窗口循环。
 - `WeChatApp.swift`：菜单栏、窗口及语音会话协调。
-- `Remote.swift`、`ATVVProtocol.swift`、`ADPCMDecoder.swift`：蓝牙语音连接和解码。
+- `VoiceRemote.swift`、`RemoteProfile.swift`：单只遥控器的型号选择和切换。
+- `Remote.swift`、`ATVVProtocol.swift`、`ADPCMDecoder.swift`：蓝牙语音连接与分型号解码，Google 保留原参数。
+- `XiaomiVoiceKey.swift`：只在小米语音就绪时临时屏蔽其原始 F5，退出或切换时恢复。
 - `FnKey.swift`、`VirtualMicrophone.swift`：Fn 按键和音频输入。
 
 普通按键直接使用设备级 `UserKeyMapping`，无需后台脚本。单次 Esc、组合快捷键、滚动及桌面动作观察该遥控器的 HID 报告，将该键原始动作抑制后执行；其他键仍走系统映射。配置每次保存立即应用，连接恢复检查复用 App 已有定时器。

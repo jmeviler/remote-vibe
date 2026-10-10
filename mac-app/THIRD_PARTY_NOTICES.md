@@ -27,3 +27,15 @@ SOFTWARE.
 
 Interaction reference: https://github.com/Tilkmilk/vibe-mote (fb30e479694524962512b5bba6afc76cd0a04778).
 No Windows driver or injection code used.
+
+Xiaomi RC003 protocol and F5 usage reference: SayAll / remote-mic-app
+https://github.com/HD838A/remote-mic-app
+Reference revision: 24d84d7301aa6cf1820a9d9ee99dba33ff60cb60
+Copyright (C) 2026 SayAll contributors. GPL-3.0-only (see ../LICENSE in source,
+or LICENSE in the application resources).
+RC003 capability parsing, frame accumulation and standard IMA decoding are
+adapted for Remote Vibe's shared voice pipeline. No SayAll artwork, drivers,
+update services, audio postprocessing or application UI are included.
+Upstream credits remote-bridge-hub, GPL-3.0-only, revision
+8a93f321ac71a602300c6cd77f7256fa4b63068e:
+https://github.com/xxb26553663-star/remote-bridge-hub

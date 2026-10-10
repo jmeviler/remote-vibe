@@ -40,6 +40,13 @@ enum ATVVControlEvent: Equatable {
 }
 
 final class ATVVProtocol {
+    private let profile: RemoteProfile
+    private var pendingAudio = Data()
+
+    init(profile: RemoteProfile = .chromecast) {
+        self.profile = profile
+        decoder.standardIMA = profile == .xiaomiRC003
+    }
     static let serviceUUID = "AB5E0001-5A21-4F05-BC7D-AF01F617B664"
     static let txUUID = "AB5E0002-5A21-4F05-BC7D-AF01F617B664"
     static let rxUUID = "AB5E0003-5A21-4F05-BC7D-AF01F617B664"
@@ -58,12 +65,19 @@ final class ATVVProtocol {
         guard let selected = capabilities.selectedCodec else {
             throw BridgeError.protocolFailure("遥控器不支持 ADPCM 8/16 kHz")
         }
+        if profile == .xiaomiRC003 {
+            guard capabilities.version == .v10, selected == .adpcm16k,
+                  (1...4096).contains(capabilities.frameSize) else {
+                throw BridgeError.protocolFailure("小米语音能力不匹配：需要 ATVV 1.0 / 16 kHz")
+            }
+        }
         self.capabilities = capabilities
         self.codec = selected
         decoder.reset(predictor: 0, stepIndex: 0)
         v10Sequence = 0
         audioStreamActive = false
         hasPendingSyncBeforeStart = false
+        pendingAudio.removeAll(keepingCapacity: true)
     }
 
     func micOpenCommand() throws -> Data {
@@ -123,7 +137,7 @@ final class ATVVProtocol {
             }
             return .unknown(data)
         case 0x0B:
-            guard let capabilities = Self.parseCapabilities(data) else { return .unknown(data) }
+            guard let capabilities = Self.parseCapabilities(data, profile: profile) else { return .unknown(data) }
             return .capabilities(capabilities)
         case 0x0C:
             guard bytes.count >= 3 else { return .micOpenError(0xffff) }
@@ -133,7 +147,7 @@ final class ATVVProtocol {
         }
     }
 
-    static func parseCapabilities(_ data: Data) -> ATVVCapabilities? {
+    static func parseCapabilities(_ data: Data, profile: RemoteProfile = .chromecast) -> ATVVCapabilities? {
         let bytes = [UInt8](data)
         guard bytes.count >= 3, bytes[0] == 0x0B else { return nil }
         let version = UInt16(bytes[1]) << 8 | UInt16(bytes[2])
@@ -148,10 +162,13 @@ final class ATVVProtocol {
             )
         case 0x0100:
             guard bytes.count >= 7 else { return nil }
+            // RC003 firmware 2671: 0b 01 00 00 03 00 78 00 00.
+            // Its codec mask sits in the legacy offset despite reporting v1.0.
+            let legacyLayout = profile == .xiaomiRC003 && bytes.count >= 9 && bytes[3] == 0 && bytes[4] & 3 != 0
             return ATVVCapabilities(
                 version: .v10,
-                codecs: bytes[3],
-                interactionModel: bytes[4],
+                codecs: legacyLayout ? bytes[4] : bytes[3],
+                interactionModel: legacyLayout ? 3 : bytes[4],
                 frameSize: Int(UInt16(bytes[5]) << 8 | UInt16(bytes[6]))
             )
         default:
@@ -160,6 +177,7 @@ final class ATVVProtocol {
     }
 
     func applyAudioSync(codec: ATVVCodec, sequence: UInt16, predictor: Int16, stepIndex: UInt8) {
+        pendingAudio.removeAll(keepingCapacity: true)
         self.codec = codec
         v10Sequence = sequence
         decoder.reset(predictor: predictor, stepIndex: stepIndex)
@@ -176,6 +194,7 @@ final class ATVVProtocol {
     /// perfectly valid sync that arrived first and intermittently corrupt the
     /// whole recording.
     func prepareForAudioStream() {
+        pendingAudio.removeAll(keepingCapacity: true)
         v10Sequence = 0
         decoder.reset(predictor: 0, stepIndex: 0)
         audioStreamActive = false
@@ -187,6 +206,7 @@ final class ATVVProtocol {
     /// AUDIO_START itself must reset stale ADPCM state. When a fresh
     /// AUDIO_SYNC arrived first, preserve the synchronized state instead.
     func beginAudioStream(codec: ATVVCodec) {
+        pendingAudio.removeAll(keepingCapacity: true)
         self.codec = codec
         if !hasPendingSyncBeforeStart {
             v10Sequence = 0
@@ -197,6 +217,7 @@ final class ATVVProtocol {
     }
 
     func endAudioStream() {
+        pendingAudio.removeAll(keepingCapacity: true)
         audioStreamActive = false
         hasPendingSyncBeforeStart = false
     }
@@ -215,6 +236,18 @@ final class ATVVProtocol {
             return (sequence, [predictor] + decoder.decode(bytes.dropFirst(6)))
         case .v10:
             guard !bytes.isEmpty else { return nil }
+            if profile == .xiaomiRC003 {
+                guard capabilities.frameSize > 0 else { return nil }
+                pendingAudio.append(contentsOf: bytes)
+                var samples: [Int16] = []
+                let sequence = v10Sequence
+                while pendingAudio.count >= capabilities.frameSize {
+                    samples += decoder.decode(pendingAudio.prefix(capabilities.frameSize))
+                    pendingAudio.removeFirst(capabilities.frameSize)
+                    v10Sequence &+= 1
+                }
+                return samples.isEmpty ? nil : (sequence, samples)
+            }
             let sequence = v10Sequence
             v10Sequence &+= 1
             return (sequence, decoder.decode(bytes[...]))

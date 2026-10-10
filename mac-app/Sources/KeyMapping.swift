@@ -60,7 +60,11 @@ struct MappedButton {
     let code: UInt8
     let name: String
     let usage: UInt64
+    var page: UInt64 = 12
+    var defaultBinding: KeyBinding? = nil
+    var source: UInt64 { (page << 32) | usage }
     var initial: KeyBinding {
+        if let defaultBinding { return defaultBinding }
         if code == 10 { return KeyBinding(kind: .nextWindow) }
         if code == 14 { return KeyBinding(kind: .nextDisplay) }
         let keys: [UInt8: UInt64] = [3:0x52, 4:0x51, 5:0x50, 6:0x4F, 7:0x29, 8:0x28, 11:0x2A]
@@ -76,6 +80,36 @@ struct MappedButton {
         .init(code: 1, name: "电源", usage: 0x19E), .init(code: 17, name: "信源", usage: 0x89),
         .init(code: 12, name: "音量＋", usage: 0xE9), .init(code: 13, name: "音量－", usage: 0xEA)
     ]
+
+    static let xiaomi: [MappedButton] = [
+        .init(code: 3, name: "方向上", usage: 0x52, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 4, name: "方向下", usage: 0x51, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 5, name: "方向左", usage: 0x50, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 6, name: "方向右", usage: 0x4F, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 7, name: "中央确认", usage: 0x28, page: 7, defaultBinding: .init(kind: .key, usage: 0x28)),
+        .init(code: 11, name: "返回", usage: 0xF1, page: 7, defaultBinding: .init(kind: .key, usage: 0x2A)),
+        .init(code: 10, name: "主页", usage: 0x4A, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 12, name: "音量＋", usage: 0x80, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 13, name: "音量－", usage: 0x81, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 18, name: "菜单", usage: 0x65, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 19, name: "TV", usage: 0x35, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 1, name: "电源", usage: 0x66, page: 7, defaultBinding: .init(kind: .original))
+    ]
+
+    static func buttons(for profile: RemoteProfile) -> [MappedButton] { profile == .chromecast ? all : xiaomi }
+
+    static func pressed(reportID: UInt32, bytes: [UInt8], profile: RemoteProfile) -> Set<UInt8>? {
+        guard reportID == 1 else { return nil }
+        if profile == .chromecast {
+            let payload = bytes.count == 3 && bytes.first == 1 ? Array(bytes.dropFirst()) : bytes
+            guard payload.count == 2 else { return nil }
+            return Set(payload.filter { $0 != 0 })
+        }
+        let payload = bytes.count == 7 && bytes.first == 1 ? Array(bytes.dropFirst()) : bytes
+        guard payload.count == 6 else { return nil }
+        let usages = Set(stride(from: 0, to: 6, by: 2).map { UInt64(payload[$0]) | UInt64(payload[$0 + 1]) << 8 })
+        return Set(xiaomi.filter { usages.contains($0.usage) }.map(\.code))
+    }
 }
 
 final class KeyMapping {
@@ -109,6 +143,8 @@ final class KeyMapping {
     private let src = "HIDKeyboardModifierMappingSrc"
     private let dst = "HIDKeyboardModifierMappingDst"
     private(set) var bindings: Bindings
+    private(set) var profile: RemoteProfile
+    var buttons: [MappedButton] { MappedButton.buttons(for: profile) }
     private(set) var status = "等待遥控器连接"
     private(set) var connected = false
     private(set) var needsApply = false
@@ -117,15 +153,30 @@ final class KeyMapping {
     var listening: Bool { manager != nil }
     var listeningAllowed: Bool { IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted }
 
-    init() {
-        if let data = UserDefaults.standard.data(forKey: "keyMappings.v1"),
+    init(profile: RemoteProfile = .chromecast) {
+        self.profile = profile
+        bindings = Self.load(profile)
+    }
+
+    private static func load(_ profile: RemoteProfile) -> Bindings {
+        if let data = UserDefaults.standard.data(forKey: profile.mappingKey),
            let stored = try? JSONDecoder().decode(Bindings.self, from: data) {
             let allowedFlags = CGEventFlags([.maskControl, .maskAlternate, .maskShift, .maskCommand]).rawValue
-            bindings = stored.filter { code, b in
-                MappedButton.all.contains { String($0.code) == code } &&
+            return stored.filter { code, b in
+                MappedButton.buttons(for: profile).contains { String($0.code) == code } &&
                 (b.kind != .key || (b.key != nil && b.modifiers & ~allowedFlags == 0))
             }
-        } else { bindings = [:] }
+        } else { return [:] }
+    }
+
+    func selectProfile(_ profile: RemoteProfile) {
+        guard self.profile != profile else { return }
+        stop()
+        capturedButtons.removeAll(); pendingCapture = nil
+        self.profile = profile
+        bindings = Self.load(profile)
+        bindingsRevision += 1; revision += 1
+        refresh()
     }
 
     func binding(_ button: MappedButton) -> KeyBinding { bindings[String(button.code)] ?? button.initial }
@@ -145,7 +196,7 @@ final class KeyMapping {
         cancelPendingActions()
         actionFeedback = nil
         bindings = values
-        if let data = try? JSONEncoder().encode(values) { UserDefaults.standard.set(data, forKey: "keyMappings.v1") }
+        if let data = try? JSONEncoder().encode(values) { UserDefaults.standard.set(data, forKey: profile.mappingKey) }
         cancelRepeats()
         bindingsRevision += 1
         revision += 1
@@ -153,21 +204,21 @@ final class KeyMapping {
     }
 
     func refresh() {
-        let needsListener = !capturedButtons.isEmpty || MappedButton.all.contains { binding($0).usesListener }
+        let needsListener = !capturedButtons.isEmpty || buttons.contains { binding($0).usesListener }
         if needsListener && listeningAllowed && AXIsProcessTrusted() {
             if manager == nil { startListener() }
         } else { stopListener() }
         listenerOK = manager != nil && listeningAllowed && AXIsProcessTrusted()
-        let entries: HIDMappings = MappedButton.all.compactMap { button in
+        let entries: HIDMappings = buttons.compactMap { button in
             let value = binding(button)
             guard value.kind != .original || capturedButtons.contains(button.code) else { return nil }
             // Unassigned usage suppresses a custom key even while permission is missing.
             let target = !capturedButtons.contains(button.code) && value.kind == .key && !value.usesListener ? value.usage : 0
-            return [src: (UInt64(12) << 32) | button.usage, dst: (UInt64(7) << 32) | target]
+            return [src: button.source, dst: (UInt64(7) << 32) | target]
         }
         let services = (IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []).filter {
-            (IOHIDServiceClientCopyProperty($0, "VendorID" as CFString) as? NSNumber)?.intValue == 6353 &&
-            (IOHIDServiceClientCopyProperty($0, "ProductID" as CFString) as? NSNumber)?.intValue == 37968
+            (IOHIDServiceClientCopyProperty($0, "VendorID" as CFString) as? NSNumber)?.intValue == profile.vendorID &&
+            (IOHIDServiceClientCopyProperty($0, "ProductID" as CFString) as? NSNumber)?.intValue == profile.productID
         }
         let disconnected = connected && services.isEmpty
         if disconnected { cancelPendingActions() }
@@ -175,7 +226,7 @@ final class KeyMapping {
         var present = Set<UInt64>()
         var applied = true
         needsApply = false
-        activeShortcuts = listenerOK ? Set(MappedButton.all.filter { binding($0).usesListener }.map { $0.code }).union(capturedButtons) : []
+        activeShortcuts = listenerOK ? Set(buttons.filter { binding($0).usesListener }.map { $0.code }).union(capturedButtons) : []
         for service in services {
             guard let id = (IOHIDServiceClientGetRegistryID(service) as? NSNumber)?.uint64Value else { continue }
             present.insert(id)
@@ -202,8 +253,8 @@ final class KeyMapping {
             needsApply = needsApply || !entries.allSatisfy { current.contains($0) }
             // Emit a custom action only after its native action is confirmed suppressed.
             activeShortcuts = activeShortcuts.filter { code in
-                guard let button = MappedButton.all.first(where: { $0.code == code }) else { return false }
-                return current.contains([src: (UInt64(12) << 32) | button.usage, dst: UInt64(7) << 32])
+                guard let button = buttons.first(where: { $0.code == code }) else { return false }
+                return current.contains([src: button.source, dst: UInt64(7) << 32])
             }
         }
         if !connected { activeShortcuts.removeAll(); cancelRepeats(); held.removeAll() }
@@ -226,14 +277,14 @@ final class KeyMapping {
 
     private func startListener() {
         let m = IOHIDManagerCreate(kCFAllocatorDefault, 0)
-        IOHIDManagerSetDeviceMatching(m, [kIOHIDVendorIDKey:6353, kIOHIDProductIDKey:37968] as CFDictionary)
+        IOHIDManagerSetDeviceMatching(m, [kIOHIDVendorIDKey:profile.vendorID, kIOHIDProductIDKey:profile.productID] as CFDictionary)
         let context = Unmanaged.passUnretained(self).toOpaque()
         IOHIDManagerRegisterInputReportCallback(m, { context, result, _, _, reportID, bytes, count in
             guard let context, result == kIOReturnSuccess, reportID == 1 else { return }
             let data = Array(UnsafeBufferPointer(start: bytes, count: count))
-            let payload = data.count == 3 && data[0] == 1 ? Array(data.dropFirst()) : data
-            guard payload.count == 2 else { return }
-            Unmanaged<KeyMapping>.fromOpaque(context).takeUnretainedValue().handle(Set(payload.filter { $0 != 0 }))
+            let mapping = Unmanaged<KeyMapping>.fromOpaque(context).takeUnretainedValue()
+            guard let pressed = MappedButton.pressed(reportID: reportID, bytes: data, profile: mapping.profile) else { return }
+            mapping.handle(pressed)
         }, context)
         IOHIDManagerRegisterDeviceRemovalCallback(m, { context, _, _, _ in
             guard let context else { return }
@@ -266,7 +317,7 @@ final class KeyMapping {
                 if captureReady { onCapturedPress?(code) }
                 continue
             }
-            guard let button = MappedButton.all.first(where: { $0.code == code }) else { continue }
+            guard let button = buttons.first(where: { $0.code == code }) else { continue }
             let value = binding(button)
             guard activeShortcuts.contains(code), canPerform() else { continue }
             perform(value, button: code)

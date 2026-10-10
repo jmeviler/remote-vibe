@@ -18,12 +18,13 @@ private final class RemoteKeyButton: NSButton {
 }
 
 private final class RemoteDiagram: NSView {
+    var profile: RemoteProfile = .chromecast { didSet { needsDisplay = true } }
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         NSColor(calibratedWhite: 0.94, alpha: 1).setFill()
-        NSBezierPath(roundedRect: NSRect(x: 43, y: 10, width: 196, height: 505), xRadius: 85, yRadius: 85).fill()
+        NSBezierPath(roundedRect: NSRect(x: 43, y: 10, width: 196, height: 505), xRadius: profile == .chromecast ? 85 : 30, yRadius: profile == .chromecast ? 85 : 30).fill()
         NSColor(calibratedWhite: 0.85, alpha: 1).setFill()
-        NSBezierPath(ovalIn: NSRect(x: 61, y: 34, width: 160, height: 160)).fill()
+        NSBezierPath(ovalIn: NSRect(x: 61, y: profile == .chromecast ? 34 : 106, width: 160, height: 160)).fill()
     }
 }
 
@@ -32,6 +33,9 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
     private let mapping: KeyMapping
     private var drafts: KeyMapping.Bindings
     private var selected: UInt8 = 8
+    private var displayedProfile: RemoteProfile
+    private var draftCache: [RemoteProfile: KeyMapping.Bindings] = [:]
+    private let diagram = RemoteDiagram(frame: NSRect(x: 0, y: 0, width: 305, height: 540))
     private let nameLabel = NSTextField(labelWithString: "静音")
     private let currentLabel = NSTextField(wrappingLabelWithString: "")
     private let actionPicker = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -69,32 +73,10 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
     init(mapping: KeyMapping) {
         self.mapping = mapping
         drafts = mapping.bindings
+        displayedProfile = mapping.profile
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 540))
-        let diagram = RemoteDiagram(frame: NSRect(x: 0, y: 0, width: 305, height: 540))
         addSubview(diagram)
-        // The physical layout includes the volume rocker on the right edge.
-        let positions: [(UInt8, String, CGFloat, CGFloat, CGFloat, CGFloat)] = [
-            (3,"↑",120,37,42,43), (4,"↓",120,150,42,43),
-            (5,"←",64,93,43,43), (6,"→",176,93,43,43), (7,"OK",114,88,54,54),
-            (11,"↩",70,215,62,42), (0,"语音",151,215,62,42),
-            (10,"主页",70,278,62,42), (8,"静音",151,278,62,42),
-            (14,"YouTube",70,341,62,42), (15,"Netflix",151,341,62,42),
-            (1,"电源",70,404,62,42), (17,"信源",151,404,62,42),
-            (12,"＋",246,153,36,39), (13,"−",246,194,36,39)
-        ]
-        for (code, title, x, y, w, h) in positions {
-            let button = RemoteKeyButton(frame: NSRect(x: x, y: y, width: w, height: h))
-            button.title = title; button.tag = Int(code); button.target = self; button.action = #selector(selectKey(_:))
-            button.font = .systemFont(ofSize: title.count > 5 ? 11 : 14, weight: .medium)
-            button.setAccessibilityLabel(code == 0 ? "语音键，按住说话" : MappedButton.all.first { $0.code == code }!.name)
-            diagram.addSubview(button); remoteButtons[code] = button
-        }
-        let volume = NSTextField(labelWithString: "音量")
-        volume.font = .systemFont(ofSize: 11); volume.textColor = .secondaryLabelColor
-        volume.frame = NSRect(x: 250, y: 132, width: 40, height: 18); diagram.addSubview(volume)
-        let brand = NSTextField(labelWithString: "Chromecast")
-        brand.font = .systemFont(ofSize: 12, weight: .medium); brand.textColor = .secondaryLabelColor
-        brand.alignment = .center; brand.frame = NSRect(x: 74, y: 470, width: 133, height: 20); diagram.addSubview(brand)
+        rebuildDiagram()
 
         nameLabel.font = .systemFont(ofSize: 26, weight: .semibold)
         place(nameLabel, y: 20, h: 36)
@@ -150,13 +132,63 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         displaySelection()
     }
 
+    func switchProfile() {
+        guard displayedProfile != mapping.profile else { return }
+        draftCache[displayedProfile] = drafts
+        displayedProfile = mapping.profile
+        drafts = draftCache[displayedProfile] ?? mapping.bindings
+        selected = displayedProfile == .chromecast ? 8 : 7
+        rebuildDiagram()
+        displaySelection()
+    }
+
+    private func rebuildDiagram() {
+        diagram.subviews.forEach { $0.removeFromSuperview() }
+        remoteButtons.removeAll()
+        diagram.profile = mapping.profile
+        let googlePositions: [(UInt8, String, CGFloat, CGFloat, CGFloat, CGFloat)] = [
+            (3,"↑",120,37,42,43), (4,"↓",120,150,42,43),
+            (5,"←",64,93,43,43), (6,"→",176,93,43,43), (7,"OK",114,88,54,54),
+            (11,"↩",70,215,62,42), (0,"语音",151,215,62,42),
+            (10,"主页",70,278,62,42), (8,"静音",151,278,62,42),
+            (14,"YouTube",70,341,62,42), (15,"Netflix",151,341,62,42),
+            (1,"电源",70,404,62,42), (17,"信源",151,404,62,42),
+            (12,"＋",246,153,36,39), (13,"−",246,194,36,39)
+        ]
+        let xiaomiPositions: [(UInt8, String, CGFloat, CGFloat, CGFloat, CGFloat)] = [
+            (1,"电源",70,43,62,42), (0,"语音",151,43,62,42),
+            (3,"↑",120,109,42,43), (4,"↓",120,222,42,43),
+            (5,"←",64,165,43,43), (6,"→",176,165,43,43), (7,"OK",114,160,54,54),
+            (11,"↩",70,286,62,42), (12,"＋",151,286,62,42),
+            (10,"主页",70,348,62,42), (13,"−",151,348,62,42),
+            (18,"菜单",70,410,62,42), (19,"TV",151,410,62,42)
+        ]
+        let positions = mapping.profile == .chromecast ? googlePositions : xiaomiPositions
+        for (code, title, x, y, w, h) in positions {
+            let button = RemoteKeyButton(frame: NSRect(x: x, y: y, width: w, height: h))
+            button.title = title; button.tag = Int(code); button.target = self; button.action = #selector(selectKey(_:))
+            button.font = .systemFont(ofSize: title.count > 5 ? 11 : 14, weight: .medium)
+            button.setAccessibilityLabel(code == 0 ? "语音键，按住说话" : mapping.buttons.first { $0.code == code }!.name)
+            diagram.addSubview(button); remoteButtons[code] = button
+        }
+        if mapping.profile == .chromecast {
+        let volume = NSTextField(labelWithString: "音量")
+        volume.font = .systemFont(ofSize: 11); volume.textColor = .secondaryLabelColor
+        volume.frame = NSRect(x: 250, y: 132, width: 40, height: 18); diagram.addSubview(volume)
+        }
+        let brand = NSTextField(labelWithString: mapping.profile == .chromecast ? "Chromecast" : "小米 RC003")
+        brand.font = .systemFont(ofSize: 12, weight: .medium); brand.textColor = .secondaryLabelColor
+        brand.alignment = .center; brand.frame = NSRect(x: 74, y: 478, width: 133, height: 20); diagram.addSubview(brand)
+
+    }
+
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private func place(_ view: NSView, y: CGFloat, h: CGFloat) {
         view.frame = NSRect(x: 330, y: y, width: 415, height: h); addSubview(view)
     }
 
-    private var selectedButton: MappedButton? { MappedButton.all.first { $0.code == selected } }
+    private var selectedButton: MappedButton? { mapping.buttons.first { $0.code == selected } }
     private var selectedBinding: KeyBinding { drafts[String(selected)] ?? selectedButton?.initial ?? .init(kind: .original) }
 
     @objc private func selectKey(_ sender: NSButton) { selected = UInt8(sender.tag); displaySelection() }
@@ -164,7 +196,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
     private func displaySelection() {
         for (code, button) in remoteButtons {
             button.selected = code == selected
-            if let physical = MappedButton.all.first(where: { $0.code == code }) {
+            if let physical = mapping.buttons.first(where: { $0.code == code }) {
                 button.toolTip = "\(physical.name) → \((drafts[String(code)] ?? physical.initial).title)"
             } else { button.toolTip = "按住说话，松开结束" }
         }
@@ -268,7 +300,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         let dirty = drafts != mapping.bindings
         liveStatus.stringValue = dirty ? "有未保存的修改" : mapping.status
         permissionButton.isHidden = (mapping.listeningAllowed && AXIsProcessTrusted()) ||
-            !MappedButton.all.contains { (drafts[String($0.code)] ?? $0.initial).usesListener }
+            !mapping.buttons.contains { (drafts[String($0.code)] ?? $0.initial).usesListener }
         permissionButton.title = !mapping.listeningAllowed ? "允许输入监控" : "允许辅助功能"
         saveButton.isEnabled = dirty || mapping.needsApply
     }

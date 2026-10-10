@@ -6,8 +6,9 @@
 <key>CFBundleDisplayName</key><string>Remote Vibe</string>
 <key>CFBundleExecutable</key><string>RemoteVibe</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>1</string>
-<key>CFBundleShortVersionString</key><string>0.1.0</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
 <key>NSBluetoothAlwaysUsageDescription</key><string>接收 Chromecast 遥控器自带麦克风的语音。</string>

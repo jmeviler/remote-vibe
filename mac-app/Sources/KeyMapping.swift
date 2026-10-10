@@ -28,12 +28,13 @@ struct MappingKey {
 }
 
 struct KeyBinding: Codable, Equatable {
-    enum Kind: String, Codable { case original, disabled, key, scrollUp, scrollDown, nextDisplay, nextWindow }
+    enum Kind: String, Codable { case original, disabled, key, scrollUp, scrollDown, nextDisplay, nextWindow, text }
     var kind: Kind
     var usage: UInt64 = 0x28
     var modifiers: UInt64 = 0
+    var text: String?
     var usesListener: Bool {
-        kind == .scrollUp || kind == .scrollDown || kind == .nextDisplay || kind == .nextWindow ||
+        kind == .text || kind == .scrollUp || kind == .scrollDown || kind == .nextDisplay || kind == .nextWindow ||
         (kind == .key && (modifiers != 0 || usage == 0x29))
     }
     var key: MappingKey? { MappingKey.all.first { $0.usage == usage } }
@@ -45,6 +46,7 @@ struct KeyBinding: Codable, Equatable {
         case .scrollDown: return "向下滚动"
         case .nextDisplay: return "切换屏幕"
         case .nextWindow: return "切换当前屏幕窗口"
+        case .text: return "输入常用文本"
         case .key:
             let flags = CGEventFlags(rawValue: modifiers)
             let prefix = [(CGEventFlags.maskControl, "⌃"), (.maskAlternate, "⌥"), (.maskShift, "⇧"), (.maskCommand, "⌘")]
@@ -84,16 +86,25 @@ final class KeyMapping {
         var original: HIDMappings
         var owned: HIDMappings = []
         var revision = -1
+        var bindingsRevision = -1
+        var conflictedSources = Set<UInt64>()
     }
     private let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
     private let desktop = DesktopActions()
+    private let textInput = TextInput()
     private var actionFeedback: (text: String, until: Date)?
     private var manager: IOHIDManager?
     private var held = Set<UInt8>()
     private var repeats: [UInt8: Timer] = [:]
     private var snapshots: [UInt64: Snapshot] = [:]
     private var revision = 0
+    private var bindingsRevision = 0
     private var activeShortcuts = Set<UInt8>()
+    private(set) var capturedButtons = Set<UInt8>()
+    private var pendingCapture: Set<UInt8>?
+    var onCapturedPress: ((UInt8) -> Void)?
+    var onInputReset: (() -> Void)?
+    var captureReady: Bool { !capturedButtons.isEmpty && connected && listenerOK && capturedButtons.isSubset(of: activeShortcuts) }
     private let property = "UserKeyMapping" as CFString
     private let src = "HIDKeyboardModifierMappingSrc"
     private let dst = "HIDKeyboardModifierMappingDst"
@@ -119,40 +130,52 @@ final class KeyMapping {
 
     func binding(_ button: MappedButton) -> KeyBinding { bindings[String(button.code)] ?? button.initial }
 
+    func capture(_ codes: Set<UInt8>) {
+        guard codes != capturedButtons else { pendingCapture = nil; return }
+        // Restore normal mappings after the last captured press has been released.
+        guard capturedButtons.isEmpty || held.isEmpty else { pendingCapture = codes; return }
+        pendingCapture = nil
+        cancelRepeats(); cancelPendingActions()
+        capturedButtons = codes
+        revision += 1
+        refresh()
+    }
+
     func save(_ values: Bindings) {
         cancelPendingActions()
         actionFeedback = nil
         bindings = values
         if let data = try? JSONEncoder().encode(values) { UserDefaults.standard.set(data, forKey: "keyMappings.v1") }
         cancelRepeats()
+        bindingsRevision += 1
         revision += 1
         refresh()
     }
 
     func refresh() {
-        let needsListener = MappedButton.all.contains { binding($0).usesListener }
+        let needsListener = !capturedButtons.isEmpty || MappedButton.all.contains { binding($0).usesListener }
         if needsListener && listeningAllowed && AXIsProcessTrusted() {
             if manager == nil { startListener() }
         } else { stopListener() }
         listenerOK = manager != nil && listeningAllowed && AXIsProcessTrusted()
         let entries: HIDMappings = MappedButton.all.compactMap { button in
             let value = binding(button)
-            guard value.kind != .original else { return nil }
+            guard value.kind != .original || capturedButtons.contains(button.code) else { return nil }
             // Unassigned usage suppresses a custom key even while permission is missing.
-            let target = value.kind == .key && !value.usesListener ? value.usage : 0
+            let target = !capturedButtons.contains(button.code) && value.kind == .key && !value.usesListener ? value.usage : 0
             return [src: (UInt64(12) << 32) | button.usage, dst: (UInt64(7) << 32) | target]
         }
-        let sources = Set(entries.compactMap { $0[src] })
         let services = (IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []).filter {
             (IOHIDServiceClientCopyProperty($0, "VendorID" as CFString) as? NSNumber)?.intValue == 6353 &&
             (IOHIDServiceClientCopyProperty($0, "ProductID" as CFString) as? NSNumber)?.intValue == 37968
         }
-        if connected && services.isEmpty { cancelPendingActions() }
+        let disconnected = connected && services.isEmpty
+        if disconnected { cancelPendingActions() }
         connected = !services.isEmpty
         var present = Set<UInt64>()
         var applied = true
         needsApply = false
-        activeShortcuts = listenerOK ? Set(MappedButton.all.filter { binding($0).usesListener }.map { $0.code }) : []
+        activeShortcuts = listenerOK ? Set(MappedButton.all.filter { binding($0).usesListener }.map { $0.code }).union(capturedButtons) : []
         for service in services {
             guard let id = (IOHIDServiceClientGetRegistryID(service) as? NSNumber)?.uint64Value else { continue }
             present.insert(id)
@@ -160,12 +183,19 @@ final class KeyMapping {
             var snapshot = snapshots[id] ?? Snapshot(service: service, original: current)
             // Apply only on connection or explicit save; never fight another remapper.
             if snapshot.revision != revision {
+                if snapshot.bindingsRevision != bindingsRevision {
+                    snapshot.conflictedSources.removeAll()
+                } else {
+                    // A temporary capture must not reclaim mappings another tool has changed.
+                    snapshot.conflictedSources.formUnion(snapshot.owned.filter { !current.contains($0) }.compactMap { $0[src] })
+                }
                 snapshot.original = restored(current, snapshot: snapshot)
-                snapshot.owned = entries
-                let desired = snapshot.original.filter { !sources.contains($0[src] ?? 0) } + entries
+                snapshot.owned = entries.filter { !snapshot.conflictedSources.contains($0[src] ?? 0) }
+                let sources = Set(snapshot.owned.compactMap { $0[src] })
+                let desired = snapshot.original.filter { !sources.contains($0[src] ?? 0) } + snapshot.owned
                 let ok = current == desired || IOHIDServiceClientSetProperty(service, property, desired as CFArray)
                 current = IOHIDServiceClientCopyProperty(service, property) as? HIDMappings ?? []
-                if ok && current == desired { snapshot.revision = revision }
+                if ok && current == desired { snapshot.revision = revision; snapshot.bindingsRevision = bindingsRevision }
                 else { applied = false }
                 snapshots[id] = snapshot
             }
@@ -180,9 +210,10 @@ final class KeyMapping {
         snapshots = snapshots.filter { present.contains($0.key) }
         status = !connected ? "设置已保存 · 等待遥控器连接" : !applied ? "按键设置未能生效，请检查权限" :
             needsApply ? "按键设置被其他程序更改 · 保存可重新应用" :
-            needsListener && !listenerOK ? "Esc、组合键和桌面动作需要输入监控及辅助功能权限" : "按键已生效 · 重连后自动恢复"
+            needsListener && !listenerOK ? "自定义动作需要输入监控及辅助功能权限" : "按键已生效 · 重连后自动恢复"
         if connected && applied && !needsApply && (!needsListener || listenerOK),
            let feedback = actionFeedback, feedback.until > Date() { status = feedback.text }
+        if disconnected { onInputReset?() }
     }
 
     private func restored(_ current: HIDMappings, snapshot: Snapshot) -> HIDMappings {
@@ -206,7 +237,9 @@ final class KeyMapping {
         }, context)
         IOHIDManagerRegisterDeviceRemovalCallback(m, { context, _, _, _ in
             guard let context else { return }
-            Unmanaged<KeyMapping>.fromOpaque(context).takeUnretainedValue().handle([])
+            let mapping = Unmanaged<KeyMapping>.fromOpaque(context).takeUnretainedValue()
+            mapping.handle([])
+            mapping.onInputReset?()
         }, context)
         IOHIDManagerScheduleWithRunLoop(m, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
         // Observe raw reports only; normal keys still use macOS's native per-device mapping.
@@ -223,7 +256,16 @@ final class KeyMapping {
         for code in released { repeats.removeValue(forKey: code)?.invalidate() }
         let added = pressed.subtracting(held)
         held = pressed
-        for code in added {
+        if pressed.isEmpty, let pendingCapture { capture(pendingCapture) }
+        if !added.isDisjoint(with: capturedButtons), pressed.count > 1 {
+            if captureReady { onCapturedPress?(0) }
+            return
+        }
+        for code in added.sorted() {
+            if capturedButtons.contains(code) {
+                if captureReady { onCapturedPress?(code) }
+                continue
+            }
             guard let button = MappedButton.all.first(where: { $0.code == code }) else { continue }
             let value = binding(button)
             guard activeShortcuts.contains(code), canPerform() else { continue }
@@ -241,9 +283,17 @@ final class KeyMapping {
         }
     }
 
-    private func perform(_ value: KeyBinding, button: UInt8) {
+    private func perform(_ value: KeyBinding, button: UInt8, targetPID: pid_t? = nil) {
         guard AXIsProcessTrusted() else { return }
-        if value.kind == .nextDisplay || value.kind == .nextWindow {
+        if value.kind == .text {
+            let result = textInput.paste(value.text ?? "", allowed: { [weak self] in
+                guard let self else { return false }
+                return self.connected && self.activeShortcuts.contains(button) && self.canPerform()
+            }, sendPaste: { [weak self] pid in
+                self?.perform(.init(kind: .key, usage: 0x19, modifiers: CGEventFlags.maskCommand.rawValue), button: button, targetPID: pid)
+            })
+            actionFeedback = (result, Date().addingTimeInterval(5)); status = result
+        } else if value.kind == .nextDisplay || value.kind == .nextWindow {
             desktop.perform(nextDisplay: value.kind == .nextDisplay, allowed: { [weak self] in
                 guard let self else { return false }
                 return self.connected && self.listenerOK && self.activeShortcuts.contains(button) && self.canPerform()
@@ -276,12 +326,15 @@ final class KeyMapping {
             }
             for event in events {
                 event.setIntegerValueField(.eventSourceUserData, value: 0x524D564B)
-                event.post(tap: .cghidEventTap)
+                if let targetPID { event.postToPid(targetPID) } else { event.post(tap: .cghidEventTap) }
             }
         }
     }
 
+    // Once paste events are posted, let the short clipboard restore timer finish.
     func cancelPendingActions() { desktop.cancel() }
+
+    func suspendActions() { cancelRepeats(); cancelPendingActions() }
 
     private func cancelRepeats() { repeats.values.forEach { $0.invalidate() }; repeats.removeAll() }
 
@@ -299,6 +352,7 @@ final class KeyMapping {
 
     func stop() {
         cancelPendingActions()
+        textInput.stop()
         stopListener()
         for snapshot in snapshots.values {
             let current = IOHIDServiceClientCopyProperty(snapshot.service, property) as? HIDMappings ?? []

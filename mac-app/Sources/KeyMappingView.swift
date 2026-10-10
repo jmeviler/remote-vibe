@@ -27,7 +27,7 @@ private final class RemoteDiagram: NSView {
     }
 }
 
-final class KeyMappingView: NSView {
+final class KeyMappingView: NSView, NSTextViewDelegate {
     override var isFlipped: Bool { true }
     private let mapping: KeyMapping
     private var drafts: KeyMapping.Bindings
@@ -36,6 +36,8 @@ final class KeyMappingView: NSView {
     private let currentLabel = NSTextField(wrappingLabelWithString: "")
     private let actionPicker = NSPopUpButton(frame: .zero, pullsDown: false)
     private let keyPicker = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let textEditor = NSTextView()
+    private let textScroll = NSScrollView()
     private let modifierLabel = NSTextField(labelWithString: "组合键（可多选）")
     private let hint = NSTextField(wrappingLabelWithString: "")
     private let saveButton = NSButton(title: "保存并生效", target: nil, action: nil)
@@ -60,6 +62,7 @@ final class KeyMappingView: NSView {
         ("Space 空格", .init(kind: .key, usage: 0x2C)),
         ("向上滚动", .init(kind: .scrollUp)), ("向下滚动", .init(kind: .scrollDown)),
         ("切换屏幕", .init(kind: .nextDisplay)), ("切换当前屏幕窗口", .init(kind: .nextWindow)),
+        ("输入常用文本", .init(kind: .text)),
         ("自定义按键 / 组合快捷键…", nil)
     ]
 
@@ -112,6 +115,25 @@ final class KeyMappingView: NSView {
         keyPicker.addItems(withTitles: MappingKey.all.map { $0.name })
         keyPicker.target = self; keyPicker.action = #selector(customChanged)
         place(keyPicker, y: 306, h: 32)
+        textEditor.isRichText = false
+        textEditor.allowsUndo = true
+        textEditor.font = .systemFont(ofSize: 14)
+        textEditor.textContainerInset = NSSize(width: 8, height: 8)
+        textEditor.isAutomaticQuoteSubstitutionEnabled = false
+        textEditor.isAutomaticDashSubstitutionEnabled = false
+        textEditor.isAutomaticTextReplacementEnabled = false
+        textEditor.isVerticallyResizable = true
+        textEditor.autoresizingMask = [.width]
+        textEditor.textContainer?.widthTracksTextView = true
+        textEditor.delegate = self
+        textEditor.setAccessibilityLabel("此按键的常用文本")
+        textScroll.hasVerticalScroller = true
+        textScroll.borderType = .bezelBorder
+        textScroll.documentView = textEditor
+        place(textScroll, y: 207, h: 131)
+        textEditor.frame = NSRect(origin: .zero, size: textScroll.contentSize)
+        textEditor.minSize = NSSize(width: 0, height: textScroll.contentSize.height)
+        textEditor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         hint.textColor = .secondaryLabelColor; hint.font = .systemFont(ofSize: 12)
         place(hint, y: 354, h: 55)
         saveButton.target = self; saveButton.action = #selector(saveMappings)
@@ -150,7 +172,8 @@ final class KeyMappingView: NSView {
         nameLabel.stringValue = selectedButton?.name ?? "语音键"
         currentLabel.stringValue = voice ? "按住说话，松开后由微信转成文字。" : "已保存：\(mapping.binding(selectedButton!).title)"
         let value = selectedBinding
-        actionPicker.selectItem(at: presets.firstIndex(where: { $0.1 == value }) ?? presets.count - 1)
+        actionPicker.selectItem(at: presets.firstIndex(where: { $0.1 == value || (value.kind == .text && $0.1?.kind == .text) }) ?? presets.count - 1)
+        textEditor.string = value.text ?? ""
         actionPicker.isEnabled = !voice; resetButton.isEnabled = !voice
         keyPicker.selectItem(at: MappingKey.all.firstIndex { $0.usage == value.usage } ?? 0)
         for (button, flag) in modifierButtons { button.state = CGEventFlags(rawValue: value.modifiers).contains(flag) ? .on : .off }
@@ -165,7 +188,11 @@ final class KeyMappingView: NSView {
         let custom = selected != 0 && actionPicker.indexOfSelectedItem == presets.count - 1
         modifierLabel.isHidden = !custom; keyPicker.isHidden = !custom
         modifierButtons.forEach { $0.0.isHidden = !custom }
+        textScroll.isHidden = selected == 0 || selectedBinding.kind != .text
         if selected == 0 { hint.stringValue = "语音功能已固定保留，当前无需设置。" }
+        else if selectedBinding.kind == .text {
+            hint.stringValue = "先将光标放入目标输入框，再按遥控器。\n按一次粘贴一次，不发送回车；文本保存在本机。"
+        }
         else if selectedBinding.kind == .nextDisplay {
             hint.stringValue = "切到下一块屏幕的可见窗口，鼠标随之移入。\n不移动窗口，不切换桌面空间；按一次切换一次。"
         } else if selectedBinding.kind == .nextWindow {
@@ -182,7 +209,10 @@ final class KeyMappingView: NSView {
     @objc private func actionChanged() {
         guard selectedButton != nil else { return }
         if let value = presets[actionPicker.indexOfSelectedItem].1 {
-            drafts[String(selected)] = value
+            var next = value
+            if next.kind == .text { next.text = selectedBinding.text ?? "" }
+            drafts[String(selected)] = next
+            textEditor.string = next.text ?? ""
         } else {
             let current = selectedBinding
             if current.kind == .key {
@@ -203,6 +233,14 @@ final class KeyMappingView: NSView {
         displayOptions(); refreshStatus()
     }
 
+    func textDidChange(_ notification: Notification) {
+        guard selected != 0, selectedBinding.kind == .text else { return }
+        var value = selectedBinding
+        value.text = textEditor.string
+        drafts[String(selected)] = value
+        refreshStatus()
+    }
+
     @objc private func saveMappings() {
         mapping.save(drafts)
         displaySelection()
@@ -214,7 +252,7 @@ final class KeyMappingView: NSView {
         displaySelection()
     }
 
-    @objc private func allowListener() {
+    @objc func allowListener() {
         let pane: String
         if !mapping.listeningAllowed {
             mapping.requestListeningAccess()

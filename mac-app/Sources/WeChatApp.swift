@@ -3,12 +3,15 @@ import ApplicationServices
 import CoreBluetooth
 import CoreAudio
 
-final class WeChatApp: NSObject, NSApplicationDelegate {
+final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let remote = Remote()
     private let mic = VirtualMicrophone()
     private let fn = FnKey()
     private let mapping = KeyMapping()
+    private lazy var unlock = ComboUnlock(mapping: mapping)
     private var mappingView: KeyMappingView!
+    private var unlockView: ComboUnlockView!
+    private var pages: NSSegmentedControl!
     private var item: NSStatusItem!
     private var window: NSWindow!
     private let connection = NSTextField(wrappingLabelWithString: "正在连接遥控器…")
@@ -34,7 +37,16 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         try? FileManager.default.createDirectory(at: statusURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         buildUI()
-        mapping.canPerform = { [weak self] in self?.active == false }
+        mapping.canPerform = { [weak self] in
+            guard let self else { return false }
+            return !self.active && !self.unlock.blocksActions
+        }
+        unlock.voiceActive = { [weak self] in self?.active == true }
+        unlock.onLock = { [weak self] in
+            guard let self else { return }
+            self.unlockView.leave()
+            if self.active { self.remote.close(); self.abort() }
+        }
         for number in [SIGINT, SIGTERM] {
             signal(number, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
@@ -54,6 +66,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
     }
 
     private func begin() {
+        guard !unlock.blocksActions else { remote.close(); message.stringValue = "锁屏或连招录入期间暂停语音"; return }
         if active { abort(); remote.close(); message.stringValue = "请等上一段结束后再说话"; return }
         guard AXIsProcessTrusted() else { remote.close(); message.stringValue = "请先允许模拟 Fn 按键"; return }
         guard mic.begin() else { remote.close(); message.stringValue = "请先完成麦克风组件安装"; return }
@@ -120,6 +133,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
     }
 
     private func refresh() {
+        unlock.refresh()
         mapping.refresh()
         mappingView.refreshStatus()
         let audioReady = mic.connect()
@@ -135,6 +149,19 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
     }
 
     private func buildUI() {
+        let mainMenu = NSMenu()
+        let appMenu = NSMenu(title: "Remote Vibe")
+        let quitItem = appMenu.addItem(withTitle: "退出 Remote Vibe", action: #selector(quit), keyEquivalent: "q")
+        quitItem.target = self
+        mainMenu.addItem(withTitle: "Remote Vibe", action: nil, keyEquivalent: "").submenu = appMenu
+        let editMenu = NSMenu(title: "编辑")
+        for (title, action, key) in [("撤销", "undo:", "z"), ("重做", "redo:", "Z"),
+                                    ("剪切", "cut:", "x"), ("复制", "copy:", "c"),
+                                    ("粘贴", "paste:", "v"), ("全选", "selectAll:", "a")] {
+            editMenu.addItem(withTitle: title, action: Selector(action), keyEquivalent: key)
+        }
+        mainMenu.addItem(withTitle: "编辑", action: nil, keyEquivalent: "").submenu = editMenu
+        NSApplication.shared.mainMenu = mainMenu
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "遥控语音"
         let menu = NSMenu()
@@ -144,7 +171,8 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "退出", action: #selector(quit), keyEquivalent: "q")
         for entry in menu.items { entry.target = self }
         item.menu = menu
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 735), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 771), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        window.delegate = self
         window.title = "Remote Vibe · 遥控器设置"
         window.isReleasedWhenClosed = false
         window.center()
@@ -161,10 +189,18 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
         title.font = .boldSystemFont(ofSize: 24)
         stack.addArrangedSubview(title)
         stack.addArrangedSubview(NSTextField(labelWithString: "点击一个按键，选择功能。语音键始终按住说话。"))
+        pages = NSSegmentedControl(labels: ["按键映射", "连招解锁"], trackingMode: .selectOne, target: self, action: #selector(changePage))
+        pages.selectedSegment = 0
+        stack.addArrangedSubview(pages)
+        let content = NSView()
+        content.widthAnchor.constraint(equalToConstant: 772).isActive = true
+        content.heightAnchor.constraint(equalToConstant: 540).isActive = true
         mappingView = KeyMappingView(mapping: mapping)
-        mappingView.widthAnchor.constraint(equalToConstant: 772).isActive = true
-        mappingView.heightAnchor.constraint(equalToConstant: 540).isActive = true
-        stack.addArrangedSubview(mappingView)
+        mappingView.frame = NSRect(x: 0, y: 0, width: 772, height: 540)
+        unlockView = ComboUnlockView(controller: unlock, allowPermissions: { [weak self] in self?.mappingView.allowListener() })
+        unlockView.isHidden = true
+        content.addSubview(mappingView); content.addSubview(unlockView)
+        stack.addArrangedSubview(content)
         let deviceRow = NSStackView(views: [connection, audioLabel])
         deviceRow.spacing = 20
         stack.addArrangedSubview(deviceRow)
@@ -177,7 +213,14 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
         stack.addArrangedSubview(message)
     }
 
-    @objc private func show() { window.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps: true) }
+    @objc private func show() { unlock.reload(); window.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps: true) }
+    @objc private func changePage() {
+        let combo = pages.selectedSegment == 1
+        if !combo { unlockView.leave() } else { unlock.reload() }
+        mappingView.isHidden = combo; unlockView.isHidden = !combo
+        window.makeFirstResponder(nil)
+    }
+    func windowWillClose(_ notification: Notification) { unlockView.leave() }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
     @objc private func allowFn() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -209,7 +252,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        poll?.invalidate(); mapping.stop(); remote.shutdown(); abort(); mic.stop()
+        poll?.invalidate(); unlock.stop(); mapping.stop(); remote.shutdown(); abort(); mic.stop()
     }
 }
 

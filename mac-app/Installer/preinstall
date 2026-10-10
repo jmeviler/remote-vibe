@@ -1,0 +1,21 @@
+#!/bin/zsh
+set -euo pipefail
+fail() { print -u2 -- "$1"; exit 1; }
+[[ "${3:-/}" == / ]] || fail '请安装到当前启动磁盘。'
+[[ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" == 1 ]] || fail '本安装包只支持 Apple Silicon（M 系列芯片）Mac。'
+os_version=$(/usr/bin/sw_vers -productVersion)
+(( ${os_version%%.*} >= 15 )) || fail '需要 macOS 15 或更新版本。'
+if /usr/bin/pgrep -x RemoteVibe >/dev/null; then
+  fail '请先从菜单栏退出正在运行的 Remote Vibe，再重新安装。'
+fi
+check_target() {
+  local bundle="$1" expected="$2"
+  [[ ! -e "$bundle" && ! -L "$bundle" ]] && return 0
+  [[ ! -L "$bundle" && -d "$bundle" ]] || fail "目标路径异常，未覆盖：$bundle"
+  local identifier=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$bundle/Contents/Info.plist" 2>/dev/null) || fail "无法识别已有组件，未覆盖：$bundle"
+  [[ "$identifier" == "$expected" ]] || fail "已有同名其他应用，未覆盖：$bundle"
+  # Updates are explicit: first use the included uninstaller, which keeps a backup.
+  fail "发现已有组件：$bundle。请先运行配套卸载包（会保留备份），再安装。"
+}
+check_target '/Applications/Remote Vibe.app' local.ben.RemoteVibe
+check_target '/Library/Audio/Plug-Ins/HAL/RemoteVibeMic.driver' local.ben.RemoteVibeMic

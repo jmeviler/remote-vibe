@@ -22,6 +22,9 @@ final class VoiceRemote {
     var sourceName: String { profile.title }
     var xiaomiReady: Bool { profile == .xiaomiRC003 && ready }
     var protocolSummary: String { device.protocolSummary }
+    var scanning: Bool { device.scanning }
+    var connecting: Bool { device.connecting }
+    var scanStarts: Int { device.scanStarts }
 
     func select(_ profile: RemoteProfile) {
         guard profile != device.profile else { return }
@@ -60,5 +63,6 @@ final class VoiceRemote {
     }
 
     func close() { device.close() }
+    func toggleDiscovery() { device.toggleDiscovery() }
     func shutdown() { device.shutdown() }
 }

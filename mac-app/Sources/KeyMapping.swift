@@ -138,6 +138,7 @@ final class KeyMapping {
     private var pendingCapture: Set<UInt8>?
     var onCapturedPress: ((UInt8) -> Void)?
     var onInputReset: (() -> Void)?
+    var onDeviceChange: (() -> Void)?
     var captureReady: Bool { !capturedButtons.isEmpty && connected && listenerOK && capturedButtons.isSubset(of: activeShortcuts) }
     private let property = "UserKeyMapping" as CFString
     private let src = "HIDKeyboardModifierMappingSrc"
@@ -151,7 +152,18 @@ final class KeyMapping {
     private var listenerOK = false
     var canPerform: () -> Bool = { true }
     var listening: Bool { manager != nil }
-    var listeningAllowed: Bool { IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted }
+    private var accessCheckedAt = -Double.infinity
+    private var accessGranted = false
+    // IOHIDCheckAccess performs synchronous TCC IPC. Share one result across a refresh pass.
+    // Real action injection still checks Accessibility at the point of use.
+    var listeningAllowed: Bool {
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - accessCheckedAt >= 1 {
+            accessGranted = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+            accessCheckedAt = now
+        }
+        return accessGranted
+    }
 
     init(profile: RemoteProfile = .chromecast) {
         self.profile = profile
@@ -273,12 +285,18 @@ final class KeyMapping {
         return current.filter { !unchanged.contains($0) } + snapshot.original.filter { sources.contains($0[src] ?? 0) }
     }
 
-    func requestListeningAccess() { _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent) }
+    func requestListeningAccess() { _ = IOHIDRequestAccess(kIOHIDRequestTypeListenEvent); accessCheckedAt = -Double.infinity }
 
     private func startListener() {
         let m = IOHIDManagerCreate(kCFAllocatorDefault, 0)
         IOHIDManagerSetDeviceMatching(m, [kIOHIDVendorIDKey:profile.vendorID, kIOHIDProductIDKey:profile.productID] as CFDictionary)
         let context = Unmanaged.passUnretained(self).toOpaque()
+        IOHIDManagerRegisterDeviceMatchingCallback(m, { context, _, _, _ in
+            guard let context else { return }
+            let mapping = Unmanaged<KeyMapping>.fromOpaque(context).takeUnretainedValue()
+            // Defer until startListener has finished assigning its manager.
+            DispatchQueue.main.async { [weak mapping] in mapping?.onDeviceChange?() }
+        }, context)
         IOHIDManagerRegisterInputReportCallback(m, { context, result, _, _, reportID, bytes, count in
             guard let context, result == kIOReturnSuccess, reportID == 1 else { return }
             let data = Array(UnsafeBufferPointer(start: bytes, count: count))
@@ -291,6 +309,7 @@ final class KeyMapping {
             let mapping = Unmanaged<KeyMapping>.fromOpaque(context).takeUnretainedValue()
             mapping.handle([])
             mapping.onInputReset?()
+            DispatchQueue.main.async { [weak mapping] in mapping?.onDeviceChange?() }
         }, context)
         IOHIDManagerScheduleWithRunLoop(m, CFRunLoopGetMain(), CFRunLoopMode.commonModes.rawValue)
         // Observe raw reports only; normal keys still use macOS's native per-device mapping.

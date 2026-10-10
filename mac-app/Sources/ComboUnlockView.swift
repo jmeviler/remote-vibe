@@ -72,6 +72,7 @@ final class ComboUnlockView: NSView {
         place(button, x: x, y: y, w: w, h: 32)
     }
     func refresh() {
+        guard window?.isVisible == true, window?.isMiniaturized == false, !NSApplication.shared.isHidden, !isHidden else { return }
         let idle = controller.mode == .idle && !controller.locked
         summary.stringValue = "连招：\(controller.sequenceLength == 0 ? "未设置" : "已保存 \(controller.sequenceLength) 次")    密码：\(controller.hasPassword ? "已保存" : "未设置")"
         record.isEnabled = idle; practice.isEnabled = idle && controller.sequenceLength > 0

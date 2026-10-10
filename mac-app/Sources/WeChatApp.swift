@@ -14,6 +14,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var unlockView: ComboUnlockView!
     private var pages: NSSegmentedControl!
     private var remotePicker: NSPopUpButton!
+    private var discoveryButton: NSButton!
     private var item: NSStatusItem!
     private var window: NSWindow!
     private let connection = NSTextField(wrappingLabelWithString: "正在连接遥控器…")
@@ -32,6 +33,8 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var fnUps = 0
     private var allowPrompted = false
     private var signalSources: [DispatchSourceSignal] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
+    private var stopping = false
     private var lastStatus: Data?
     private let statusURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/RemoteVibe/status.json")
@@ -40,6 +43,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         try? FileManager.default.createDirectory(at: statusURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         buildUI()
         updateRemoteUI()
+        mapping.onDeviceChange = { [weak self] in self?.refresh() }
         mapping.canPerform = { [weak self] in
             guard let self else { return false }
             return !self.active && !self.unlock.blocksActions
@@ -60,6 +64,8 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         remote.onStatus = { [weak self] text in
             guard let self else { return }
             self.connection.stringValue = text
+            self.updateDiscoveryButton()
+            self.mapping.refresh()
             self.xiaomiVoiceKey.refresh(enabled: self.remote.xiaomiReady)
             self.save()
         }
@@ -75,8 +81,11 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         remote.onSamples = { [weak self] values, rate in self?.mic.feed(values, rate: rate) }
         remote.onEnd = { [weak self] normal in self?.end(normal) }
         remote.start()
-        poll = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.refresh() }
-        poll?.tolerance = 0.2
+        for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification, NSWorkspace.sessionDidResignActiveNotification] {
+            workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.refresh()
+            })
+        }
         refresh()
         show()
     }
@@ -89,7 +98,9 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         sessionID = UUID()
         let id = sessionID
         active = true; released = false; drainStarted = false
+        scheduleMaintenance()
         remotePicker.isEnabled = false
+        updateDiscoveryButton()
         mapping.cancelPendingActions()
         item.button?.title = "● 语音"
         message.stringValue = "正在准备微信语音输入…"
@@ -128,7 +139,9 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
                         guard let self, self.sessionID == id else { return }
                         self.mic.end()
                         self.active = false
+                        self.scheduleMaintenance()
                         self.remotePicker.isEnabled = true
+                        self.updateDiscoveryButton()
                         self.completedSessions += 1
                         self.item.button?.title = "遥控语音"
                         self.message.stringValue = "本次语音已结束；可以继续按住语音键说话。"
@@ -146,26 +159,47 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if fn.held { fn.up(); fnUps += 1 }
         mic.end()
         active = false; released = false
+        scheduleMaintenance()
         remotePicker.isEnabled = true
+        updateDiscoveryButton()
         item.button?.title = "遥控语音"
         save()
     }
 
     private func refresh() {
-        unlock.refresh()
+        guard !stopping else { return }
         mapping.refresh()
-        mappingView.refreshStatus()
+        unlock.refresh()
+        if settingsVisible {
+            if !mappingView.isHidden { mappingView.refreshStatus() }
+            if !unlockView.isHidden { unlockView.refresh() }
+        }
         xiaomiVoiceKey.refresh(enabled: remote.xiaomiReady)
         let audioReady = mic.connect()
-        audioLabel.stringValue = audioReady ? "麦克风：Chromecast Mic 已就绪" : "麦克风：等待安装组件"
-        permission.stringValue = AXIsProcessTrusted() ? "Fn 按键权限：已允许" : "Fn 按键权限：需要在系统设置中允许"
+        if settingsVisible {
+            audioLabel.stringValue = audioReady ? "麦克风：Chromecast Mic 已就绪" : "麦克风：等待安装组件"
+            permission.stringValue = AXIsProcessTrusted() ? "Fn 按键权限：已允许" : "Fn 按键权限：需要在系统设置中允许"
+        }
         if CBCentralManager.authorization == .allowedAlways && !allowPrompted && !AXIsProcessTrusted() {
             allowPrompted = true
             // This only registers the app in the system permission list.
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(options)
         }
+        scheduleMaintenance()
         save()
+    }
+
+    private var settingsVisible: Bool { window?.isVisible == true && window?.isMiniaturized == false && !NSApplication.shared.isHidden }
+
+    private func scheduleMaintenance() {
+        guard !stopping else { return }
+        // Voice and key callbacks run immediately; this timer only audits state and updates diagnostics.
+        let interval: TimeInterval = active || settingsVisible || unlock.mode != .idle ? 1 : 10
+        guard poll?.timeInterval != interval else { return }
+        poll?.invalidate()
+        poll = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in self?.refresh() }
+        poll?.tolerance = interval == 1 ? 0.2 : 2
     }
 
     private func buildUI() {
@@ -212,7 +246,8 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         remotePicker.addItems(withTitles: RemoteProfile.allCases.map { $0.title })
         remotePicker.selectItem(at: RemoteProfile.allCases.firstIndex(of: remote.profile) ?? 0)
         remotePicker.target = self; remotePicker.action = #selector(changeRemote)
-        let remoteRow = NSStackView(views: [NSTextField(labelWithString: "当前遥控器"), remotePicker])
+        discoveryButton = NSButton(title: "扫描遥控器", target: self, action: #selector(toggleDiscovery))
+        let remoteRow = NSStackView(views: [NSTextField(labelWithString: "当前遥控器"), remotePicker, discoveryButton])
         remoteRow.spacing = 12
         stack.addArrangedSubview(remoteRow)
         stack.addArrangedSubview(NSTextField(labelWithString: "点击遥控器上的按键，选择功能。每种遥控器分别保存，语音键始终按住说话。"))
@@ -241,16 +276,28 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         stack.addArrangedSubview(message)
     }
 
-    @objc private func show() { unlock.reload(); window.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps: true) }
+    @objc private func show() {
+        unlock.reload(); window.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps: true)
+        refresh()
+    }
     @objc private func changeRemote() {
         guard !active else { return }
         unlockView.leave()
         xiaomiVoiceKey.stop()
         remote.select(RemoteProfile.allCases[remotePicker.indexOfSelectedItem])
+        updateDiscoveryButton()
         updateRemoteUI()
         connection.stringValue = "\(remote.sourceName)：正在连接…"
         message.stringValue = "已选择\(remote.sourceName)，连接后按住语音键说话。"
         save()
+    }
+    @objc private func toggleDiscovery() {
+        guard !active else { return }
+        remote.toggleDiscovery()
+    }
+    private func updateDiscoveryButton() {
+        discoveryButton.isEnabled = !active && !remote.ready
+        discoveryButton.title = remote.ready ? "已连接" : remote.scanning ? "停止扫描" : remote.connecting ? "取消等待" : "扫描遥控器"
     }
     private func updateRemoteUI() {
         let google = remote.profile == .chromecast
@@ -265,9 +312,18 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let combo = pages.selectedSegment == 1
         if !combo { unlockView.leave() } else { unlock.reload() }
         mappingView.isHidden = combo; unlockView.isHidden = !combo
+        if combo { unlockView.refresh() }
         window.makeFirstResponder(nil)
     }
-    func windowWillClose(_ notification: Notification) { unlockView.leave() }
+    func windowWillClose(_ notification: Notification) {
+        unlockView.leave()
+        DispatchQueue.main.async { [weak self] in self?.scheduleMaintenance() }
+    }
+    func windowDidMiniaturize(_ notification: Notification) { scheduleMaintenance() }
+    func windowDidDeminiaturize(_ notification: Notification) { refresh() }
+    func windowDidBecomeKey(_ notification: Notification) { refresh() }
+    func applicationDidHide(_ notification: Notification) { scheduleMaintenance(); save() }
+    func applicationDidUnhide(_ notification: Notification) { refresh() }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { show(); return true }
     @objc private func allowFn() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -288,10 +344,13 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "completedSessions": completedSessions, "status": message.stringValue,
             "voiceSource": remote.sourceName, "voiceProfile": remote.profile.rawValue,
             "voiceProtocol": remote.protocolSummary, "connectionStatus": connection.stringValue,
+            "bluetoothScanning": remote.scanning, "bluetoothConnecting": remote.connecting,
+            "bluetoothScanStarts": remote.scanStarts,
             "xiaomiVoiceKeyReady": xiaomiVoiceKey.ready, "xiaomiVoiceKeyStatus": xiaomiVoiceKey.status,
             "keyMappingStatus": mapping.status, "keyMappingConnected": mapping.connected,
             "inputMonitoring": mapping.listeningAllowed,
             "shortcutListener": mapping.listening,
+            "maintenanceInterval": poll?.timeInterval ?? 0,
             "defaultInput": AudioDevices.string(AudioDevices.defaultInput(), kAudioObjectPropertyName) ?? "none"
         ]
         guard let snapshot = try? JSONSerialization.data(withJSONObject: status, options: [.sortedKeys]), snapshot != lastStatus else { return }
@@ -302,6 +361,10 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        stopping = true
+        workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
+        workspaceObservers.removeAll()
+        mapping.onDeviceChange = nil
         poll?.invalidate(); unlock.stop(); mapping.stop(); remote.shutdown(); xiaomiVoiceKey.stop(); abort(); mic.stop()
     }
 }

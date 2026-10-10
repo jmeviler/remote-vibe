@@ -44,6 +44,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         buildUI()
         updateRemoteUI()
         mapping.onDeviceChange = { [weak self] in self?.refresh() }
+        mapping.onFnChange = { [weak self] in self?.save() }
         mapping.canPerform = { [weak self] in
             guard let self else { return false }
             return !self.active && !self.unlock.blocksActions
@@ -70,7 +71,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.save()
         }
         remote.canBegin = { [weak self] profile in
-            guard let self, !self.active, !self.unlock.blocksActions else { return false }
+            guard let self, !self.active, !self.mapping.fnHeld, !self.unlock.blocksActions else { return false }
             if profile == .xiaomiRC003 {
                 self.xiaomiVoiceKey.refresh(enabled: self.remote.xiaomiReady)
                 guard self.xiaomiVoiceKey.ready else { self.message.stringValue = self.xiaomiVoiceKey.status; return false }
@@ -330,7 +331,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         _ = AXIsProcessTrustedWithOptions(options)
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
     }
-    @objc private func stopVoice() { remote.close(); abort() }
+    @objc private func stopVoice() { mapping.suspendActions(); remote.close(); abort() }
     @objc private func quit() { NSApplication.shared.terminate(nil) }
 
     private func save() {
@@ -339,7 +340,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "bluetoothAuthorization": CBCentralManager.authorization.rawValue,
             "accessibility": AXIsProcessTrusted(), "connected": remote.ready,
             "microphoneReady": mic.available, "recording": remote.streaming,
-            "sessionActive": active, "fnHeld": fn.held, "fnDowns": fnDowns, "fnUps": fnUps,
+            "sessionActive": active, "fnHeld": fn.held || mapping.fnHeld, "mappedFnHeld": mapping.fnHeld, "fnDowns": fnDowns, "fnUps": fnUps,
             "audioFrames": remote.frameCount, "fedSamples": mic.fedFrames, "renderedSamples": mic.renderedFrames,
             "completedSessions": completedSessions, "status": message.stringValue,
             "voiceSource": remote.sourceName, "voiceProfile": remote.profile.rawValue,
@@ -365,6 +366,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         workspaceObservers.removeAll()
         mapping.onDeviceChange = nil
+        mapping.onFnChange = nil
         poll?.invalidate(); unlock.stop(); mapping.stop(); remote.shutdown(); xiaomiVoiceKey.stop(); abort(); mic.stop()
     }
 }

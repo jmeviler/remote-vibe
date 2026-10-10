@@ -3,10 +3,13 @@ import IOKit.hid
 import IOKit.hidsystem
 
 struct MappingKey {
+    // App-only selector: Fn has no ordinary USB keyboard usage and must never use native remapping.
+    static let fnUsage: UInt64 = 0
     let name: String
     let usage: UInt64
     let code: CGKeyCode
     static let all: [MappingKey] = [
+        .init(name: "Fn", usage: fnUsage, code: 63),
         .init(name: "Enter 回车", usage: 0x28, code: 36), .init(name: "Backspace 退格删除", usage: 0x2A, code: 51),
         .init(name: "Escape 取消", usage: 0x29, code: 53), .init(name: "Tab", usage: 0x2B, code: 48),
         .init(name: "Space 空格", usage: 0x2C, code: 49),
@@ -33,8 +36,9 @@ struct KeyBinding: Codable, Equatable {
     var usage: UInt64 = 0x28
     var modifiers: UInt64 = 0
     var text: String?
+    var isFn: Bool { kind == .key && usage == MappingKey.fnUsage }
     var usesListener: Bool {
-        kind == .text || kind == .scrollUp || kind == .scrollDown || kind == .nextDisplay || kind == .nextWindow ||
+        isFn || kind == .text || kind == .scrollUp || kind == .scrollDown || kind == .nextDisplay || kind == .nextWindow ||
         (kind == .key && (modifiers != 0 || usage == 0x29))
     }
     var key: MappingKey? { MappingKey.all.first { $0.usage == usage } }
@@ -48,8 +52,9 @@ struct KeyBinding: Codable, Equatable {
         case .nextWindow: return "切换当前屏幕窗口"
         case .text: return "输入常用文本"
         case .key:
+            if isFn { return "Fn（按住 / 松开）" }
             let flags = CGEventFlags(rawValue: modifiers)
-            let prefix = [(CGEventFlags.maskControl, "⌃"), (.maskAlternate, "⌥"), (.maskShift, "⇧"), (.maskCommand, "⌘")]
+            let prefix = [(CGEventFlags.maskControl, "⌃"), (.maskAlternate, "⌥"), (.maskShift, "⇧"), (.maskCommand, "⌘"), (.maskSecondaryFn, "Fn + ")]
                 .filter { flags.contains($0.0) }.map { $0.1 }.joined()
             return prefix + (key?.name ?? "Enter 回车")
         }
@@ -129,6 +134,10 @@ final class KeyMapping {
     private var actionFeedback: (text: String, until: Date)?
     private var manager: IOHIDManager?
     private var held = Set<UInt8>()
+    private let mappedFn = FnKey()
+    private var fnButtons = Set<UInt8>()
+    var fnHeld: Bool { mappedFn.held }
+    var onFnChange: (() -> Void)?
     private var repeats: [UInt8: Timer] = [:]
     private var snapshots: [UInt64: Snapshot] = [:]
     private var revision = 0
@@ -173,10 +182,10 @@ final class KeyMapping {
     private static func load(_ profile: RemoteProfile) -> Bindings {
         if let data = UserDefaults.standard.data(forKey: profile.mappingKey),
            let stored = try? JSONDecoder().decode(Bindings.self, from: data) {
-            let allowedFlags = CGEventFlags([.maskControl, .maskAlternate, .maskShift, .maskCommand]).rawValue
+            let allowedFlags = CGEventFlags([.maskControl, .maskAlternate, .maskShift, .maskCommand, .maskSecondaryFn]).rawValue
             return stored.filter { code, b in
                 MappedButton.buttons(for: profile).contains { String($0.code) == code } &&
-                (b.kind != .key || (b.key != nil && b.modifiers & ~allowedFlags == 0))
+                (b.kind != .key || (b.key != nil && b.modifiers & ~allowedFlags == 0 && (!b.isFn || b.modifiers == 0)))
             }
         } else { return [:] }
     }
@@ -195,6 +204,7 @@ final class KeyMapping {
 
     func capture(_ codes: Set<UInt8>) {
         guard codes != capturedButtons else { pendingCapture = nil; return }
+        releaseMappedFn()
         // Restore normal mappings after the last captured press has been released.
         guard capturedButtons.isEmpty || held.isEmpty else { pendingCapture = codes; return }
         pendingCapture = nil
@@ -205,6 +215,7 @@ final class KeyMapping {
     }
 
     func save(_ values: Bindings) {
+        releaseMappedFn()
         cancelPendingActions()
         actionFeedback = nil
         bindings = values
@@ -270,6 +281,7 @@ final class KeyMapping {
             }
         }
         if !connected { activeShortcuts.removeAll(); cancelRepeats(); held.removeAll() }
+        if !fnButtons.isSubset(of: activeShortcuts) { releaseMappedFn() }
         snapshots = snapshots.filter { present.contains($0.key) }
         status = !connected ? "设置已保存 · 等待遥控器连接" : !applied ? "按键设置未能生效，请检查权限" :
             needsApply ? "按键设置被其他程序更改 · 保存可重新应用" :
@@ -326,6 +338,8 @@ final class KeyMapping {
         for code in released { repeats.removeValue(forKey: code)?.invalidate() }
         let added = pressed.subtracting(held)
         held = pressed
+        fnButtons.subtract(released)
+        if fnButtons.isEmpty { releaseMappedFn() }
         if pressed.isEmpty, let pendingCapture { capture(pendingCapture) }
         if !added.isDisjoint(with: capturedButtons), pressed.count > 1 {
             if captureReady { onCapturedPress?(0) }
@@ -355,7 +369,15 @@ final class KeyMapping {
 
     private func perform(_ value: KeyBinding, button: UInt8, targetPID: pid_t? = nil) {
         guard AXIsProcessTrusted() else { return }
-        if value.kind == .text {
+        if value.isFn {
+            let wasHeld = mappedFn.held
+            guard mappedFn.down() else {
+                status = "Fn 已被按住或没有权限，本次未接管"
+                return
+            }
+            fnButtons.insert(button)
+            if !wasHeld { onFnChange?() }
+        } else if value.kind == .text {
             let result = textInput.paste(value.text ?? "", allowed: { [weak self] in
                 guard let self else { return false }
                 return self.connected && self.activeShortcuts.contains(button) && self.canPerform()
@@ -374,26 +396,8 @@ final class KeyMapping {
         } else if value.kind == .scrollUp || value.kind == .scrollDown {
             CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
                     wheel1: value.kind == .scrollUp ? 3 : -3, wheel2: 0, wheel3: 0)?.post(tap: .cghidEventTap)
-        } else if value.kind == .key, let key = value.key {
-            let source = CGEventSource(stateID: .privateState)
-            var flags = CGEventSource.flagsState(.combinedSessionState)
-            let modifiers: [(CGEventFlags, CGKeyCode)] = [(.maskControl, 59), (.maskAlternate, 58), (.maskShift, 56), (.maskCommand, 55)]
-                .filter { CGEventFlags(rawValue: value.modifiers).contains($0.0) && !flags.contains($0.0) }
-            var events: [CGEvent] = []
-            for (flag, code) in modifiers {
-                flags.insert(flag)
-                guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true) else { return }
-                event.type = .flagsChanged; event.flags = flags; events.append(event)
-            }
-            guard let down = CGEvent(keyboardEventSource: source, virtualKey: key.code, keyDown: true),
-                  let up = CGEvent(keyboardEventSource: source, virtualKey: key.code, keyDown: false) else { return }
-            down.flags = flags; up.flags = flags
-            events += [down, up]
-            for (flag, code) in modifiers.reversed() {
-                flags.remove(flag)
-                guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false) else { return }
-                event.type = .flagsChanged; event.flags = flags; events.append(event)
-            }
+        } else if value.kind == .key,
+                  let events = Self.keyEvents(value, currentFlags: CGEventSource.flagsState(.combinedSessionState)) {
             for event in events {
                 event.setIntegerValueField(.eventSourceUserData, value: 0x524D564B)
                 if let targetPID { event.postToPid(targetPID) } else { event.post(tap: .cghidEventTap) }
@@ -401,14 +405,47 @@ final class KeyMapping {
         }
     }
 
+    // Build the entire shortcut before posting, including balanced Fn flagsChanged events.
+    static func keyEvents(_ value: KeyBinding, currentFlags: CGEventFlags) -> [CGEvent]? {
+        guard value.kind == .key, !value.isFn, let key = value.key else { return nil }
+        let source = CGEventSource(stateID: .privateState)
+        var flags = currentFlags
+        let modifiers: [(CGEventFlags, CGKeyCode)] = [(.maskControl, 59), (.maskAlternate, 58), (.maskShift, 56), (.maskCommand, 55), (.maskSecondaryFn, 63)]
+            .filter { CGEventFlags(rawValue: value.modifiers).contains($0.0) && !flags.contains($0.0) }
+        var events: [CGEvent] = []
+        for (flag, code) in modifiers {
+            flags.insert(flag)
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: true) else { return nil }
+            event.type = .flagsChanged; event.flags = flags; events.append(event)
+        }
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: key.code, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key.code, keyDown: false) else { return nil }
+        down.flags = flags; up.flags = flags
+        events += [down, up]
+        for (flag, code) in modifiers.reversed() {
+            flags.remove(flag)
+            guard let event = CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false) else { return nil }
+            event.type = .flagsChanged; event.flags = flags; events.append(event)
+        }
+        return events
+    }
+
     // Once paste events are posted, let the short clipboard restore timer finish.
     func cancelPendingActions() { desktop.cancel() }
 
-    func suspendActions() { cancelRepeats(); cancelPendingActions() }
+    func suspendActions() { releaseMappedFn(); cancelRepeats(); cancelPendingActions() }
+
+    private func releaseMappedFn() {
+        fnButtons.removeAll()
+        guard mappedFn.held else { return }
+        mappedFn.up()
+        onFnChange?()
+    }
 
     private func cancelRepeats() { repeats.values.forEach { $0.invalidate() }; repeats.removeAll() }
 
     private func stopListener() {
+        releaseMappedFn()
         if manager != nil { cancelPendingActions() }
         cancelRepeats(); held.removeAll()
         if let manager {

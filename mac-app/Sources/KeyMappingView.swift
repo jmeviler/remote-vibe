@@ -52,6 +52,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
     private var remoteButtons: [UInt8: RemoteKeyButton] = [:]
     private let presets: [(String, KeyBinding?)] = [
         ("原按键功能", .init(kind: .original)), ("不执行", .init(kind: .disabled)),
+        ("Fn（按住 / 松开）", .init(kind: .key, usage: MappingKey.fnUsage)),
         ("Enter 回车 / 确认", .init(kind: .key, usage: 0x28)),
         ("Backspace 退格删除", .init(kind: .key, usage: 0x2A)),
         ("Escape 取消", .init(kind: .key, usage: 0x29)),
@@ -74,6 +75,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         self.mapping = mapping
         drafts = mapping.bindings
         displayedProfile = mapping.profile
+        selected = mapping.profile == .chromecast ? 8 : 7
         super.init(frame: NSRect(x: 0, y: 0, width: 800, height: 540))
         addSubview(diagram)
         rebuildDiagram()
@@ -89,12 +91,13 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         actionPicker.target = self; actionPicker.action = #selector(actionChanged)
         place(actionPicker, y: 154, h: 32)
         place(modifierLabel, y: 207, h: 22)
-        for (index, entry) in [("⌃ Control", CGEventFlags.maskControl), ("⇧ Shift", .maskShift), ("⌥ Option", .maskAlternate), ("⌘ Command", .maskCommand)].enumerated() {
+        for (index, entry) in [("⌃ Control", CGEventFlags.maskControl), ("⇧ Shift", .maskShift), ("⌥ Option", .maskAlternate), ("⌘ Command", .maskCommand), ("Fn", .maskSecondaryFn)].enumerated() {
             let button = NSButton(checkboxWithTitle: entry.0, target: self, action: #selector(customChanged))
-            button.frame = NSRect(x: 330 + CGFloat(index % 2) * 180, y: 236 + CGFloat(index / 2) * 30, width: 165, height: 24)
+            button.frame = NSRect(x: 330 + CGFloat(index % 3) * 138, y: 236 + CGFloat(index / 3) * 30, width: 132, height: 24)
             addSubview(button); modifierButtons.append((button, entry.1))
         }
         keyPicker.addItems(withTitles: MappingKey.all.map { $0.name })
+        keyPicker.setAccessibilityLabel("自定义主键")
         keyPicker.target = self; keyPicker.action = #selector(customChanged)
         place(keyPicker, y: 306, h: 32)
         textEditor.isRichText = false
@@ -219,9 +222,12 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         if let selectedButton { remoteButtons[selected]?.toolTip = "\(selectedButton.name) → \(selectedBinding.title)" }
         let custom = selected != 0 && actionPicker.indexOfSelectedItem == presets.count - 1
         modifierLabel.isHidden = !custom; keyPicker.isHidden = !custom
-        modifierButtons.forEach { $0.0.isHidden = !custom }
+        modifierButtons.forEach { $0.0.isHidden = !custom; $0.0.isEnabled = !selectedBinding.isFn }
         textScroll.isHidden = selected == 0 || selectedBinding.kind != .text
         if selected == 0 { hint.stringValue = "语音功能已固定保留，当前无需设置。" }
+        else if selectedBinding.isFn {
+            hint.stringValue = "按住此键保持 Fn，松开即释放；用途由系统或软件决定。\n不会开启遥控器麦克风，也不会切换系统输入设备。"
+        }
         else if selectedBinding.kind == .text {
             hint.stringValue = "先将光标放入目标输入框，再按遥控器。\n按一次粘贴一次，不发送回车；文本保存在本机。"
         }
@@ -251,7 +257,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
                 keyPicker.selectItem(at: MappingKey.all.firstIndex { $0.usage == current.usage } ?? 0)
                 for (button, flag) in modifierButtons { button.state = CGEventFlags(rawValue: current.modifiers).contains(flag) ? .on : .off }
             } else {
-                keyPicker.selectItem(at: 0)
+                keyPicker.selectItem(at: MappingKey.all.firstIndex { $0.usage == 0x28 } ?? 0)
                 modifierButtons.forEach { $0.0.state = .off }
             }
             customChanged()
@@ -260,6 +266,9 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
     }
 
     @objc private func customChanged() {
+        if MappingKey.all[keyPicker.indexOfSelectedItem].usage == MappingKey.fnUsage {
+            modifierButtons.forEach { $0.0.state = .off }
+        }
         let flags = modifierButtons.filter { $0.0.state == .on }.reduce(UInt64(0)) { $0 | $1.1.rawValue }
         drafts[String(selected)] = .init(kind: .key, usage: MappingKey.all[keyPicker.indexOfSelectedItem].usage, modifiers: flags)
         displayOptions(); refreshStatus()

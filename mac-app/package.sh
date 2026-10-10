@@ -30,7 +30,6 @@ for item in items:
     item['BundleIsRelocatable'] = False
     item['BundleHasStrictIdentifier'] = True
 p.write_bytes(plistlib.dumps(items))
-guide = pathlib.Path('Installer/开始使用.txt').read_text()
 for name, text in [('welcome', 'Remote Vibe '+version+'\n\n支持 M 系列芯片 Mac，macOS 15 或更新。\n支持 Google Chromecast 和小米 RC003 遥控器。\n\n包含 App 和语音组件，无需编译。\n识别依赖微信已有的“长按 Fn 全局语音输入”。\n首次使用仍需本人允许蓝牙、辅助功能等系统权限。\n\n安装会重启系统音频服务，声音可能短暂中断。\n已有旧版时，请先退出 App 并使用配套卸载包。'), ('conclusion', '安装完成\n\n请打开“应用程序 → Remote Vibe”，选择遥控器型号。\n按 App 提示允许权限，然后启用微信长按 Fn 语音输入。\n\n首次使用的完整步骤、常见问题和卸载方法，见压缩包内“0-开始使用.txt”。')]:
     (root/'resources'/f'{name}.html').write_text('<html><head><meta charset="utf-8"></head><body style="font-family: -apple-system; font-size:14px"><pre style="font-family:inherit;white-space:pre-wrap">'+html.escape(text)+'</pre></body></html>')
 distribution = f'''<?xml version="1.0" encoding="utf-8"?>
@@ -56,6 +55,15 @@ PY
 mkdir -p build/share
 archive="$PWD/build/share/$name.zip"
 if [[ -e "$archive" ]]; then archive="$PWD/build/share/$name-$(date +%Y%m%d-%H%M%S).zip"; fi
-/usr/bin/ditto -c -k --keepParent --norsrc --noextattr "$share" "$archive"
+python3 - "$share" "$archive" <<'PY'
+from pathlib import Path
+import sys, zipfile
+root = Path(sys.argv[1])
+# Set ZIP's standard UTF-8 flag so Chinese names also survive non-Apple unzip tools.
+with zipfile.ZipFile(sys.argv[2], 'x', compression=zipfile.ZIP_DEFLATED) as archive:
+    for path in sorted(root.rglob('*')):
+        if path.is_file():
+            archive.write(path, str(path.relative_to(root.parent)))
+PY
 print "Share archive: $archive"
 print "Staging directory: $stage"

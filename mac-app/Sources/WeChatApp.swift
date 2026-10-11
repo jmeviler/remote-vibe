@@ -47,13 +47,19 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         mapping.onFnChange = { [weak self] in self?.save() }
         mapping.canPerform = { [weak self] in
             guard let self else { return false }
-            return !self.active && !self.unlock.blocksActions
+            return !self.active && !self.remote.voiceBusy && !self.unlock.blocksActions
         }
+        mapping.onVoicePress = { [weak self] in
+            guard let self, AXIsProcessTrusted(), !self.mapping.fnHeld, self.mic.connect() else { return false }
+            return self.remote.beginMappedVoice()
+        }
+        mapping.onVoiceRelease = { [weak self] normal in self?.remote.endMappedVoice(normal: normal) }
         unlock.voiceActive = { [weak self] in self?.active == true }
         unlock.onLock = { [weak self] in
             guard let self else { return }
             self.unlockView.leave()
-            if self.active { self.remote.close(); self.abort() }
+            self.mapping.suspendActions()
+            if self.active || self.remote.voiceBusy { self.remote.close(); self.abort() }
         }
         for number in [SIGINT, SIGTERM] {
             signal(number, SIG_IGN)
@@ -111,7 +117,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let self, self.sessionID == id, self.active, !self.released else { return }
             guard self.fn.down() else { self.remote.close(); self.abort(); self.message.stringValue = "Fn 已被按住或没有权限，请重试"; return }
             self.fnDowns += 1
-            self.message.stringValue = "正在说话 · 松开遥控器语音键结束"
+            self.message.stringValue = "正在说话 · 松开当前按键结束"
             // Retain the first syllables while WeChat opens its microphone.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
                 guard let self, self.sessionID == id, self.active else { return }
@@ -349,6 +355,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "voiceProtocol": remote.protocolSummary, "connectionStatus": connection.stringValue,
             "bluetoothScanning": remote.scanning, "bluetoothConnecting": remote.connecting,
             "bluetoothScanStarts": remote.scanStarts,
+            "mappedVoiceHeld": mapping.mappedVoiceHeld, "mappedVoiceActive": remote.mappedVoiceActive, "voiceBusy": remote.voiceBusy,
             "xiaomiVoiceKeyReady": xiaomiVoiceKey.ready, "xiaomiVoiceKeyStatus": xiaomiVoiceKey.status,
             "keyMappingStatus": mapping.status, "keyMappingConnected": mapping.connected,
             "inputMonitoring": mapping.listeningAllowed,

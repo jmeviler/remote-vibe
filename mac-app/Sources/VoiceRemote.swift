@@ -19,6 +19,8 @@ final class VoiceRemote {
     var ready: Bool { device.ready }
     var streaming: Bool { device.streaming }
     var frameCount: Int { device.frameCount }
+    var voiceBusy: Bool { device.voiceBusy }
+    var mappedVoiceActive: Bool { device.mappedVoiceActive }
     var sourceName: String { profile.title }
     var xiaomiReady: Bool { profile == .xiaomiRC003 && ready }
     var protocolSummary: String { device.protocolSummary }
@@ -62,6 +64,11 @@ final class VoiceRemote {
         device.start()
     }
 
+    func beginMappedVoice() -> Bool {
+        guard profile == .chromecast, ready, !voiceBusy, canBegin(profile) else { return false }
+        return device.beginMappedVoice()
+    }
+    func endMappedVoice(normal: Bool) { device.endMappedVoice(normal: normal) }
     func close() { device.close() }
     func toggleDiscovery() { device.toggleDiscovery() }
     func shutdown() { device.shutdown() }

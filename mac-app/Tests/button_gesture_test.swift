@@ -181,6 +181,19 @@ enum ButtonGestureTest {
                 precondition(!plain.hasGestures && plain.usesListener == button.initial.usesListener)
             }
         }
+        let voice = KeyBinding(kind: .remoteVoice)
+        precondition(voice.requiresHold && voice.usesListener && !voice.isFn)
+        precondition(voice.isValid && !KeyBinding(kind: .remoteVoice, modifiers: 1).isValid)
+        let voiceHold = ButtonBinding(singleClick: voice)
+        let voiceLong = ButtonBinding(singleClick: .init(kind: .key), longPress: voice)
+        precondition(voiceHold.validationMessage(for: .chromecast) == nil)
+        precondition(voiceLong.validationMessage(for: .chromecast) == nil)
+        precondition(voiceHold.validationMessage(for: .xiaomiRC003) != nil)
+        precondition(voiceLong.validationMessage(for: .xiaomiRC003) != nil)
+        precondition(ButtonBinding(singleClick: voice, doubleClick: .init(kind: .disabled)).validationMessage != nil)
+        precondition(ButtonBinding(singleClick: .init(kind: .disabled), doubleClick: voice).validationMessage != nil)
+        let voiceDecoded = try JSONDecoder().decode(ButtonBinding.self, from: JSONEncoder().encode(voiceLong))
+        precondition(voiceDecoded == voiceLong)
         precondition(RemoteProfile.chromecast.mappingKey != RemoteProfile.xiaomiRC003.mappingKey)
         // Construct balanced shortcuts without posting them to the session.
         let events = KeyMapping.keyEvents(old["14"]!, currentFlags: .maskCommand)!

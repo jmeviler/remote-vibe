@@ -13,11 +13,9 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     private var subscribed = Set<String>()
     private var handshakeSent = false
     private var stopping = false
-    private var proto: ATVVProtocol
+    private let audio: RemoteAudioSession
+    private var proto: ATVVProtocol { audio.proto }
     private var modelConfirmed = false
-    private var streamID: UInt8 = 0
-    private var keepAlive: Timer?
-    private var limit: Timer?
     private var reconnect: Timer?
     private var scanTimeout: Timer?
     private var connectionTimeout: Timer?
@@ -27,8 +25,10 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var connecting: Bool { peripheral != nil && !ready }
     private(set) var scanStarts = 0
     private(set) var ready = false
-    private(set) var streaming = false
-    private(set) var frameCount = 0
+    var streaming: Bool { audio.streaming }
+    var frameCount: Int { audio.frameCount }
+    var voiceBusy: Bool { audio.busy }
+    var mappedVoiceActive: Bool { audio.source == .mappedButton }
 
     var protocolSummary: String {
         guard let caps = proto.capabilities, let codec = proto.codec else { return "等待协商" }
@@ -37,8 +37,13 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     init(profile: RemoteProfile = .chromecast) {
         self.profile = profile
-        proto = ATVVProtocol(profile: profile)
+        audio = RemoteAudioSession(profile: profile)
         super.init()
+        audio.send = { [weak self] in self?.write($0) }
+        audio.onBegin = { [weak self] in self?.onBegin() }
+        audio.onSamples = { [weak self] in self?.onSamples($0, $1) }
+        audio.onEnd = { [weak self] in self?.onEnd($0) }
+        audio.onStatus = { [weak self] in self?.onStatus($0) }
     }
 
     func start() { central = CBCentralManager(delegate: self, queue: .main) }
@@ -46,17 +51,16 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     func shutdown() {
         stopping = true
         ready = false
-        close()
+        audio.reset()
         reconnect?.invalidate()
         connectionTimeout?.invalidate()
         stopScanning()
         if let peripheral { central?.cancelPeripheralConnection(peripheral) }
     }
 
-    func close() {
-        if streaming, let data = try? proto.micCloseCommand(streamID: streamID) { write(data) }
-        finish(normal: false)
-    }
+    func close() { audio.cancel() }
+    func beginMappedVoice() -> Bool { ready && audio.beginMappedVoice() }
+    func endMappedVoice(normal: Bool) { audio.endMappedVoice(normal: normal) }
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         guard !stopping else { return }
@@ -65,7 +69,7 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             reconnect?.invalidate()
             stopScanning()
             ready = false
-            finish(normal: false)
+            audio.reset()
             command = nil
             peripheral = nil
             connectionTimeout?.invalidate()
@@ -155,7 +159,7 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             self.central.cancelPeripheralConnection(p)
         }
         onStatus("正在初始化遥控器语音")
-        proto = ATVVProtocol(profile: profile)
+        audio.reset()
         subscribed.removeAll()
         handshakeSent = false
         modelConfirmed = profile == .chromecast
@@ -170,7 +174,7 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         command = nil
         peripheral = nil
         connectionTimeout?.invalidate()
-        finish(normal: false)
+        audio.reset()
         guard !stopping, central.state == .poweredOn else { return }
         reconnect?.invalidate()
         guard UserDefaults.standard.string(forKey: rememberedKey) != nil, retryCount < 3 else {
@@ -225,75 +229,31 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) {
-        guard p === peripheral, error == nil, let data = c.value else { return }
+        guard p === peripheral, !stopping, error == nil, let data = c.value else { return }
         if c.uuid == CBUUID(string: "2A24") {
             modelConfirmed = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) == "RC003"
             if modelConfirmed { negotiate() } else { onStatus("这款小米型号暂未适配，仅支持 RC003") }
             return
         }
         if c.uuid.uuidString.uppercased() == ATVVProtocol.rxUUID {
-            guard streaming, let decoded = proto.decodeAudio(data), let codec = proto.codec else { return }
-            frameCount += 1
-            onSamples(decoded.samples, codec.sampleRate)
+            audio.receiveAudio(data)
             return
         }
-        switch proto.parseControl(data) {
+        let event = proto.parseControl(data)
+        switch event {
         case .capabilities(let capabilities):
             guard handshakeSent, !ready else { return }
             do {
                 try proto.acceptCapabilities(capabilities)
                 ready = true
+                audio.ready = true
                 retryCount = 0
                 UserDefaults.standard.set(p.identifier.uuidString, forKey: rememberedKey)
                 connectionTimeout?.invalidate()
                 if profile == .chromecast, let close = try? proto.micCloseCommand(streamID: 0) { write(close) }
                 onStatus("遥控器已连接")
             } catch { onStatus(error.localizedDescription) }
-        case .startSearch:
-            if !streaming, ready {
-                proto.prepareForAudioStream()
-                if let data = try? proto.micOpenCommand() { write(data) }
-            }
-        case .audioStart(_, let codec, let sid):
-            guard ready, !streaming else { return }
-            guard profile != .xiaomiRC003 || codec == .adpcm16k else { close(); onStatus("小米切换到不支持的音频编码"); return }
-            proto.beginAudioStream(codec: codec)
-            streamID = sid
-            if !streaming {
-                streaming = true
-                frameCount = 0
-                onBegin()
-                // onBegin can decline the session if recognition is unavailable.
-                guard streaming else { return }
-                keepAlive?.invalidate()
-                if profile == .chromecast { keepAlive = Timer.scheduledTimer(withTimeInterval: 4, repeats: true) { [weak self] _ in
-                    guard let self, self.streaming, let data = try? self.proto.keepAliveCommand(streamID: self.streamID) else { return }
-                    self.write(data)
-                } }
-                limit?.invalidate()
-                limit = Timer.scheduledTimer(withTimeInterval: 55, repeats: false) { [weak self] _ in
-                    guard let self else { return }
-                    if let data = try? self.proto.micCloseCommand(streamID: self.streamID) { self.write(data) }
-                    self.finish(normal: true)
-                }
-            }
-        case .audioSync(let codec, let sequence, let predictor, let stepIndex):
-            proto.applyAudioSync(codec: codec, sequence: sequence, predictor: predictor, stepIndex: stepIndex)
-        case .audioStop:
-            finish(normal: true)
-        case .micOpenError:
-            onStatus("遥控器暂时未能开启麦克风，请再按一次")
-            finish(normal: false)
-        case .unknown: break
+        default: audio.receive(event)
         }
-    }
-
-    private func finish(normal: Bool) {
-        keepAlive?.invalidate()
-        limit?.invalidate()
-        proto.endAudioStream()
-        guard streaming else { return }
-        streaming = false
-        onEnd(normal)
     }
 }

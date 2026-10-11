@@ -443,3 +443,4 @@
 "当前 %@ 比正式版 %@ 更新" = "Installed %@ is newer than public release %@";
 "发现 %@，下载包尚未就绪" = "Found %@; download is not ready yet";
 "可下载新版本 %@ · 打开发布页" = "Update %@ available · Open releases";
+"GitHub 暂时限流，请稍后重试或打开发布页" = "GitHub rate limit reached. Try later or open the releases page.";

@@ -390,6 +390,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
                 let result: String
                 if error != nil {
                     result = L("检查失败，请检查网络或打开发布页")
+                } else if let http = response as? HTTPURLResponse,
+                          http.statusCode == 429 || (http.statusCode == 403 && http.value(forHTTPHeaderField: "X-RateLimit-Remaining") == "0") {
+                    result = L("GitHub 暂时限流，请稍后重试或打开发布页")
                 } else if (response as? HTTPURLResponse)?.statusCode == 404 {
                     result = L("暂无正式发布版本")
                 } else if (response as? HTTPURLResponse)?.statusCode == 200,

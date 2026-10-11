@@ -15,6 +15,7 @@ open "build/Remote Vibe.app"
 - `ButtonGesture.swift`：单击、双击与长按状态机，0.3 秒双击间隔、0.55 秒长按阈值。
 - `ActionCatalog.swift`：分类动作库、快捷键预设及音量 / 亮度 / 媒体系统按键。
 - `KeyMappingView.swift`：AppKit 遥控器布局和配置界面，图形由原生控件绘制。
+- `StudioTheme.swift`：暖白与深绿主题、遥控器展示区、动作预览和可伸缩窗口布局。
 - `DesktopActions.swift`：按需查询可见窗口、双屏切换与稳定的同屏窗口循环。
 - `WeChatApp.swift`：菜单栏、窗口及语音会话协调。
 - `RemoteAudioSession.swift`：物理语音键与 Google 普通键开麦的会话、超时、尾音及取消处理。
@@ -26,6 +27,8 @@ open "build/Remote Vibe.app"
 普通按键直接使用设备级 `UserKeyMapping`，无需后台脚本。单次 Esc、组合快捷键、滚动、桌面动作及设置了双击 / 长按的按键观察该遥控器的 HID 报告，将该键原始动作抑制后执行；其他键仍走系统映射。手势使用可取消的一次性定时器，空闲时没有额外轮询。配置每次保存立即应用，连接恢复检查复用 App 已有定时器。
 
 设置页按单击、双击、长按分别编辑；手势使用条件与 Fn 保持规则见主 README。运行 `zsh Tests/test-button-gestures.sh` 检查时序、旧配置兼容及两种设置页，不触发真实系统按键。
+
+设置窗口支持调整大小，最小为 900 × 640；高度不足时可纵向滚动。运行 `zsh Tests/preview-design.sh round-3` 生成两种遥控器、连招页、编辑与禁用状态，以及 900 / 1080 / 1280 宽度的本机预览，输出到 `build/design/round-3/`。预览使用真实视图和隔离的示例状态，不连接蓝牙、不写入用户配置、不访问钥匙串。三轮检查记录见 [DESIGN-REVIEW.md](DESIGN-REVIEW.md)。
 
 0.4.0 的分类动作库同时支持打开用户选择的 `.app` 与 HTTP(S) 网页；参数按手势保存。系统快捷键遵循当前 Mac 和目标软件设置，亮度 / 音量 / 媒体控制遵循设备与播放器支持。
 

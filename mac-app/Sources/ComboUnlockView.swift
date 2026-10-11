@@ -1,6 +1,6 @@
 import AppKit
 
-final class ComboUnlockView: NSView {
+final class ComboUnlockView: StudioPage {
     override var isFlipped: Bool { true }
     private let controller: ComboUnlock
     private let allowPermissions: () -> Void
@@ -9,57 +9,83 @@ final class ComboUnlockView: NSView {
     private let status = NSTextField(wrappingLabelWithString: "")
     private let password = NSSecureTextField()
     private let enabled = NSButton(checkboxWithTitle: "开启连招解锁", target: nil, action: nil)
-    private let record = NSButton(title: "录制连招", target: nil, action: nil)
-    private let finish = NSButton(title: "确认录制", target: nil, action: nil)
-    private let practice = NSButton(title: "练习", target: nil, action: nil)
-    private let cancel = NSButton(title: "结束 / 取消", target: nil, action: nil)
-    private let save = NSButton(title: "保存 / 更换密码", target: nil, action: nil)
-    private let clear = NSButton(title: "清除连招与密码…", target: nil, action: nil)
-    private let verify = NSButton(title: "开始手动锁屏验证", target: nil, action: nil)
-    private let success = NSButton(title: "看到了测试字符", target: nil, action: nil)
-    private let failure = NSButton(title: "没有出现", target: nil, action: nil)
-    private let permissions = NSButton(title: "允许按键控制", target: nil, action: nil)
+    private let record = StudioButton(title: "录制连招", target: nil, action: nil)
+    private let finish = StudioButton(title: "确认录制", target: nil, action: nil)
+    private let practice = StudioButton(title: "练习", target: nil, action: nil)
+    private let cancel = StudioButton(title: "结束 / 取消", target: nil, action: nil)
+    private let save = StudioButton(title: "保存 / 更换密码", target: nil, action: nil)
+    private let clear = StudioButton(title: "清除连招与密码…", target: nil, action: nil)
+    private let verify = StudioButton(title: "开始手动锁屏验证", target: nil, action: nil)
+    private let success = StudioButton(title: "看到了测试字符", target: nil, action: nil)
+    private let failure = StudioButton(title: "没有出现", target: nil, action: nil)
+    private let permissions = StudioButton(title: "允许按键控制", target: nil, action: nil)
 
     init(controller: ComboUnlock, allowPermissions: @escaping () -> Void) {
         self.controller = controller
         self.allowPermissions = allowPermissions
-        super.init(frame: NSRect(x: 0, y: 0, width: 772, height: 540))
-        let title = NSTextField(labelWithString: "用一段连招，解锁你的 Mac")
-        title.font = .systemFont(ofSize: 24, weight: .semibold)
-        place(title, x: 20, y: 14, w: 732, h: 34)
-        let explanation = NSTextField(wrappingLabelWithString: "录入 8–16 次按键，再重复确认。语音、电源键不参与；每次间隔不超过 3 秒。")
-        place(explanation, x: 20, y: 56, w: 732, h: 38)
-        summary.font = .systemFont(ofSize: 13, weight: .medium)
-        place(summary, x: 20, y: 97, w: 732, h: 24)
-        for (button, x, width, action) in [
-            (record, 20.0, 120.0, #selector(recordPressed)), (finish, 150, 120, #selector(finishPressed)),
-            (practice, 280, 100, #selector(practicePressed)), (cancel, 390, 140, #selector(cancelPressed))
-        ] { setup(button, action: action, x: x, y: 130, w: width) }
-        setup(permissions, action: #selector(permissionsPressed), x: 544, y: 130, w: 170)
-        progress.textColor = .secondaryLabelColor
-        place(progress, x: 20, y: 170, w: 732, h: 52)
-        let label = NSTextField(labelWithString: "本机登录密码")
-        place(label, x: 20, y: 235, w: 140, h: 24)
+        super.init(frame: NSRect(x: 0, y: 0, width: 1024, height: 574))
+        appearance = NSAppearance(named: .aqua)
+        let intro = RemoteStage(frame: NSRect(x: 0, y: 0, width: 286, height: 574))
+        addSubview(intro)
+        let surface = StudioPanel(frame: NSRect(x: 304, y: 0, width: 720, height: 574))
+        addSubview(surface)
+        let eyebrow = StudioTheme.eyebrow("02 / COMBO UNLOCK", light: true)
+        place(eyebrow, x: 24, y: 25, w: 240, h: 17)
+        let heading = StudioTheme.label("把连招，\n变成钥匙。", size: 30, weight: .semibold, color: StudioTheme.color(0xF1F5E9))
+        heading.maximumNumberOfLines = 2
+        place(heading, x: 23, y: 74, w: 240, h: 90)
+        let subtitle = StudioTheme.label("为熟悉的动作，赋予新的意义。", size: 12, color: StudioTheme.color(0xAFBFAB))
+        place(subtitle, x: 25, y: 182, w: 238, h: 22)
+        for (index, pair) in [("录制", "输入 8–16 次按键，并重复确认。"), ("验证", "在本机锁屏界面完成手动测试。"), ("开启", "验证成功后，由你决定是否启用。")].enumerated() {
+            let y = CGFloat(254 + index * 82)
+            place(StudioTheme.eyebrow("0\(index + 1)", light: true), x: 25, y: y, w: 30, h: 18)
+            place(StudioTheme.label(pair.0, size: 15, weight: .medium, color: StudioTheme.accent), x: 63, y: y - 2, w: 180, h: 23)
+            let description = NSTextField(wrappingLabelWithString: pair.1)
+            description.font = .systemFont(ofSize: 11); description.textColor = StudioTheme.color(0xBBC8B7)
+            place(description, x: 63, y: y + 29, w: 195, h: 30)
+        }
+        place(StudioTheme.eyebrow("LOCAL ONLY / 仅保存在本机", light: true), x: 24, y: 536, w: 240, h: 18)
+        let title = StudioTheme.label("连招解锁", size: 26, weight: .semibold, color: StudioTheme.ink)
+        place(title, x: 332, y: 25, w: 660, h: 37)
+        summary.font = .systemFont(ofSize: 12, weight: .medium); summary.textColor = StudioTheme.secondary
+        place(summary, x: 332, y: 75, w: 660, h: 23)
+        let explanation = NSTextField(wrappingLabelWithString: "语音与电源键不参与。相邻按键间隔不超过 3 秒，长按只计一次。")
+        explanation.font = .systemFont(ofSize: 12); explanation.textColor = StudioTheme.secondary
+        place(explanation, x: 332, y: 112, w: 660, h: 34)
+        record.primary = true
+        setup(record, action: #selector(recordPressed), x: 330, y: 158, w: 128)
+        setup(finish, action: #selector(finishPressed), x: 464, y: 158, w: 119)
+        setup(practice, action: #selector(practicePressed), x: 589, y: 158, w: 83)
+        setup(cancel, action: #selector(cancelPressed), x: 678, y: 158, w: 130)
+        setup(permissions, action: #selector(permissionsPressed), x: 814, y: 158, w: 184)
+        progress.textColor = StudioTheme.secondary; progress.font = .systemFont(ofSize: 12)
+        place(progress, x: 332, y: 207, w: 660, h: 44)
+        place(StudioTheme.eyebrow("本机登录密码"), x: 332, y: 266, w: 200, h: 18)
         password.placeholderString = "仅保存到本机钥匙串"
         password.setAccessibilityLabel("本机登录密码")
-        place(password, x: 160, y: 231, w: 350, h: 28)
-        setup(save, action: #selector(savePressed), x: 524, y: 229, w: 190)
-        let storage = NSTextField(wrappingLabelWithString: "连招与密码仅存本机钥匙串。关闭功能会保留设置；清除后需重新录制和填写。")
-        storage.textColor = .secondaryLabelColor; storage.font = .systemFont(ofSize: 12)
-        place(storage, x: 20, y: 269, w: 732, h: 36)
-        setup(clear, action: #selector(clearPressed), x: 20, y: 311, w: 180)
-        setup(verify, action: #selector(verifyPressed), x: 210, y: 311, w: 195)
+        StudioTheme.style(password)
+        place(password, x: 332, y: 294, w: 440, h: 30)
+        setup(save, action: #selector(savePressed), x: 790, y: 289, w: 209)
+        let storage = NSTextField(wrappingLabelWithString: "连招与密码仅存本机钥匙串，关闭功能会保留设置。")
+        storage.textColor = StudioTheme.secondary; storage.font = .systemFont(ofSize: 11)
+        place(storage, x: 332, y: 337, w: 660, h: 30)
+        setup(verify, action: #selector(verifyPressed), x: 330, y: 388, w: 206)
         enabled.target = self; enabled.action = #selector(enabledPressed)
-        place(enabled, x: 440, y: 314, w: 240, h: 28)
-        let limitations = NSTextField(wrappingLabelWithString: "首次默认关闭。验证时由你手动锁屏；App 只试填一个字符，不按回车。\n仅适用于已登录后的锁屏，不支持重启 / FileVault 首次登录。")
-        limitations.textColor = .secondaryLabelColor; limitations.font = .systemFont(ofSize: 12)
-        place(limitations, x: 20, y: 354, w: 732, h: 44)
-        status.font = .systemFont(ofSize: 13, weight: .medium)
-        place(status, x: 20, y: 409, w: 732, h: 60)
-        setup(success, action: #selector(successPressed), x: 20, y: 481, w: 190)
-        setup(failure, action: #selector(failurePressed), x: 224, y: 481, w: 140)
+        enabled.font = .systemFont(ofSize: 12)
+        place(enabled, x: 553, y: 393, w: 232, h: 28)
+        clear.destructive = true
+        setup(clear, action: #selector(clearPressed), x: 794, y: 388, w: 204)
+        let limitations = NSTextField(wrappingLabelWithString: "首次默认关闭。手动锁屏验证只试填一个字符，不按回车。\n仅用于已登录后的锁屏；不支持重启或 FileVault 首次登录。")
+        limitations.textColor = StudioTheme.secondary; limitations.font = .systemFont(ofSize: 11)
+        place(limitations, x: 332, y: 440, w: 660, h: 38)
+        status.font = .systemFont(ofSize: 12, weight: .medium); status.textColor = StudioTheme.ink
+        place(status, x: 332, y: 488, w: 660, h: 39)
+        setup(success, action: #selector(successPressed), x: 330, y: 531, w: 195)
+        setup(failure, action: #selector(failurePressed), x: 535, y: 531, w: 145)
+
         controller.onChange = { [weak self] in self?.refresh() }
-        refresh()
+        updateContents()
+        captureHorizontalLayout()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -69,10 +95,14 @@ final class ComboUnlockView: NSView {
     }
     private func setup(_ button: NSButton, action: Selector, x: CGFloat, y: CGFloat, w: CGFloat) {
         button.target = self; button.action = action; button.bezelStyle = .rounded
-        place(button, x: x, y: y, w: w, h: 32)
+        place(button, x: x, y: y, w: w, h: 38)
     }
     func refresh() {
         guard window?.isVisible == true, window?.isMiniaturized == false, !NSApplication.shared.isHidden, !isHidden else { return }
+        updateContents()
+    }
+
+    private func updateContents() {
         let idle = controller.mode == .idle && !controller.locked
         summary.stringValue = "连招：\(controller.sequenceLength == 0 ? "未设置" : "已保存 \(controller.sequenceLength) 次")    密码：\(controller.hasPassword ? "已保存" : "未设置")"
         record.isEnabled = idle; practice.isEnabled = idle && controller.sequenceLength > 0

@@ -1,6 +1,6 @@
 # Remote Vibe · 开发与维护
 
-使用方法、默认键位、权限、构建和卸载说明见 [项目 README](../README.md)。
+项目简介见 [README](../README.md)；默认键位、权限、手势设置和卸载方法见 [安装与使用说明](../Installer/开始使用.txt)。
 
 以下命令从仓库根目录执行。脚本自身也按所在位置定位根目录，支持通过绝对路径调用。
 
@@ -10,6 +10,27 @@ open "build/Remote Vibe.app"
 ```
 
 点击菜单栏「遥控语音 → 打开遥控语音」进入设置，选择当前使用的 Google 或小米 RC003，一次使用一只。两种型号均采用按住 Fn 的微信语音输入流程。配置图随型号切换，两种均可选择图上的按键、选择动作并保存，各自的配置和草稿独立保留。
+
+## 语音组件与打包
+
+仅按键映射无需安装驱动。首次使用遥控器语音时，构建并安装组件：
+
+```sh
+zsh Scripts/build-driver.sh
+sudo zsh Scripts/install-driver.sh
+```
+
+安装会重启系统音频服务；已有同名组件时拒绝覆盖。微信输入设备应选择系统默认输入或 `Chromecast Mic`。卸载组件使用 `sudo zsh Scripts/uninstall-driver.sh`，退出 App 后执行，组件会备份到 `build/disabled/`。
+
+修改完成后先提交源码，再生成分享包，确保包内源码归档对应当前 Git 提交：
+
+```sh
+zsh Scripts/build-app.sh
+zsh Scripts/build-driver.sh
+zsh Scripts/package.sh
+```
+
+输出位于 `build/share/`，包含安装包、卸载包、首次使用说明、源码、版本记录及许可证。打包不执行安装。
 
 ## 实现
 
@@ -28,7 +49,7 @@ open "build/Remote Vibe.app"
 
 普通按键直接使用设备级 `UserKeyMapping`，无需后台脚本。单次 Esc、组合快捷键、滚动、桌面动作及设置了双击 / 长按的按键观察该遥控器的 HID 报告，将该键原始动作抑制后执行；其他键仍走系统映射。手势使用可取消的一次性定时器，空闲时没有额外轮询。配置每次保存立即应用，连接恢复检查复用 App 已有定时器。
 
-设置页按单击、双击、长按分别编辑；手势使用条件与 Fn 保持规则见主 README。运行 `zsh Tests/test-button-gestures.sh` 检查时序、旧配置兼容及两种设置页，不触发真实系统按键。
+设置页按单击、双击、长按分别编辑；手势使用条件与 Fn 保持规则见安装与使用说明。运行 `zsh Tests/test-button-gestures.sh` 检查时序、旧配置兼容及两种设置页，不触发真实系统按键。
 
 设置窗口支持调整大小，最小为 900 × 640；高度不足时可纵向滚动。运行 `zsh Tests/preview-design.sh round-3` 生成两种遥控器、连招页、编辑与禁用状态，以及 900 / 1080 / 1280 宽度的本机预览，输出到 `build/design/round-3/`。预览使用真实视图和隔离的示例状态，不连接蓝牙、不写入用户配置、不访问钥匙串。三轮检查记录见 [DESIGN-REVIEW.md](DESIGN-REVIEW.md)。
 
@@ -40,7 +61,7 @@ open "build/Remote Vibe.app"
 
 回退到旧版时应同时恢复该版本的配置快照：旧版不认识新增动作类型。可用 `defaults export local.ben.RemoteVibe 路径.plist` 备份偏好，在退出 App 后用 `defaults import local.ben.RemoteVibe 路径.plist` 恢复，再运行对应旧构建。
 
-0.4.1 新增 Google **遥控器语音** 动作，可将普通键设为按下即开麦或长按后开麦，松开结束。Fn 映射的用途不变；小米继续使用原语音键。设置方法见主 README，验证边界见 [GOOGLE-VOICE-VALIDATION.md](GOOGLE-VOICE-VALIDATION.md)。运行 `zsh Tests/test-remote-voice.sh` 验证语音会话和两种型号的原语音路径。
+0.4.1 新增 Google **遥控器语音** 动作，可将普通键设为按下即开麦或长按后开麦，松开结束。Fn 映射的用途不变；小米继续使用原语音键。设置方法见安装与使用说明，验证边界见 [GOOGLE-VOICE-VALIDATION.md](GOOGLE-VOICE-VALIDATION.md)。运行 `zsh Tests/test-remote-voice.sh` 验证语音会话和两种型号的原语音路径。
 
 ## 目录与命名调整
 

@@ -4,7 +4,7 @@
 
 原生 Swift / AppKit 应用，无 Web 服务、Electron 或第三方运行时。按键映射使用 macOS 原生 HID 接口，配置界面和蓝牙语音在同一个菜单栏 App 中运行。
 
-0.3.1 常驻优化、CPU 实测与验证范围见 [性能核查](mac-app/PERFORMANCE.md)。
+0.3.1 常驻优化、CPU 实测与验证范围见 [性能核查](Docs/PERFORMANCE.md)。
 
 ## 使用
 
@@ -68,11 +68,11 @@ Esc、组合键、换屏和换窗按一次触发一次，长按不连发。组�
 
 开麦无响应或没有收到音频时自动取消；快速松手后，迟到的 ATVV 1.0 软件开麦响应会被关闭，原语音键不受软件重试等待影响。每次沿用 55 秒上限；按键松开时关麦并接收短暂在途音频后排空。若 0.4 秒内没有关麦确认，按原流编号重试一次；再等 0.4 秒仍无确认时报告异常并断开当前语音连接，不报正常结束。保存配置、按键监听丢失、切换型号、睡眠或退出时取消该按键的语音。空闲时不增加轮询，也不新增驱动。
 
-本机 Google 的软件直接开麦已用独立程序实测成功；完整按键映射接入的自动化与人工验收边界见 [语音验证记录](mac-app/Tests/GOOGLE-VOICE-VALIDATION.md)。
+本机 Google 的软件直接开麦已用独立程序实测成功；完整按键映射接入的自动化与人工验收边界见 [语音验证记录](Docs/GOOGLE-VOICE-VALIDATION.md)。
 
 ### 单击、双击与长按
 
-0.3.3 为 Google 和小米的全部普通按键增加独立的双击、长按动作，参考 [remote-mic-app](https://github.com/HD838A/remote-mic-app)。旧单击配置直接保留，双击和长按默认均为 **未设置**。语音键继续按住说话、松开结束。
+0.3.3 为 Google 和小米的全部普通按键增加独立的双击、长按动作。旧单击配置直接保留，双击和长按默认均为 **未设置**。语音键继续按住说话、松开结束。
 
 - 未设置双击、长按：保留原有的即时响应和重复规则。
 - 设置双击：第一次松开后等待 **0.3 秒**；在此期间再次按下并松开，只执行双击动作。没有第二次按下才执行单击。
@@ -168,8 +168,7 @@ Remote Vibe 自身不调用云端识别接口、不保存录音或转写；微�
 在本仓库根目录运行：
 
 ```sh
-cd mac-app
-zsh build.sh
+zsh Scripts/build-app.sh
 open "build/Remote Vibe.app"
 ```
 
@@ -179,11 +178,11 @@ open "build/Remote Vibe.app"
 
 ### 语音组件（仅首次使用语音时）
 
-在 `mac-app` 目录中运行：
+在本仓库根目录运行：
 
 ```sh
-zsh Driver/build-driver.sh
-sudo zsh install-driver.sh
+zsh Scripts/build-driver.sh
+sudo zsh Scripts/install-driver.sh
 ```
 
 安装仅添加 `/Library/Audio/Plug-Ins/HAL/RemoteVibeMic.driver`，遇到已有同名组件会拒绝覆盖，并会重启 CoreAudio。不会安装内核扩展，也不会新增开机启动项。该组件只能作为默认输入设备，不能成为默认扬声器。
@@ -192,7 +191,7 @@ sudo zsh install-driver.sh
 
 **音频影响：** 当前语音流程会临时改变系统默认麦克风，跟随默认输入的会议或录音软件可能受影响。结束恢复不等于过程无影响；原设备拔出、崩溃/强制结束等情况下无法保证即时恢复。并行会议/录音请在对应软件内指定实体麦克风。安装/卸载还会重启系统音频服务，可能短暂打断播放与录音。当前版本不承诺对所有音频软件零影响。
 
-正常语音期间切换输入是设计行为。本机已观察到 AirPods → 遥控器 → AirPods 的正常恢复，输出保持原设备；完整依据和边界见 [音频设备核查](mac-app/AUDIO-BEHAVIOR.md)。
+正常语音期间切换输入是设计行为。本机已观察到 AirPods → 遥控器 → AirPods 的正常恢复，输出保持原设备；完整依据和边界见 [音频设备核查](Docs/AUDIO-BEHAVIOR.md)。
 
 ## 保存与移除
 
@@ -203,28 +202,38 @@ sudo zsh install-driver.sh
 - 运行状态在 `~/Library/Application Support/RemoteVibe/status.json`，仅包含设备和计数信息，只在状态改变时写入。
 - 点击 **恢复此键默认**，再保存，可撤销某个按键的自定义设置。
 - 从菜单栏退出 App，会停止监听并撤销本次仍在接管的按键设置；语音结束后停止音频输出，空闲时不持续发送静音。
-- 卸载音频组件：退出 App 后，在 `mac-app` 中运行 `sudo zsh uninstall-driver.sh`。组件会移动到本机 `build/disabled/`，保留撤销路径。
+- 卸载音频组件：退出 App 后，在仓库根目录运行 `sudo zsh Scripts/uninstall-driver.sh`。组件会移动到本机 `build/disabled/`，保留撤销路径。
 
 当前构建使用本地签名，尚未签名公证用于公开二进制分发。应用标识保持不变，以兼容已授权的本机安装。
 
 ## 目录
 
 ```text
-mac-app/
-  Sources/                当前 App 源码
-  Resources/              App 图标 PNG 与 ICNS
-  Driver/                 虚拟麦克风源码及上游许可证
-  Tests/                  手势、设置界面、Fn 与音频组件验证代码
-  build.sh                原生 App 构建
-  install-driver.sh       安装可选语音组件
-  uninstall-driver.sh     移除语音组件
+Sources/
+  App/                    启动、退出及整体协调
+  Bluetooth/              连接、型号选择及 ATVV 协议
+  Audio/                  语音会话、解码及虚拟麦克风
+  Input/                  按键映射、手势、Fn、文本及桌面操作
+  Unlock/                 连招解锁逻辑
+  UI/                     设置窗口、配置图及主题
+Driver/                   虚拟麦克风源码及上游许可证
+Installer/                安装包脚本及首次使用说明
+Resources/                Info.plist、App 图标
+Tests/                    回归测试及隔离预览
+Scripts/                  App / 驱动构建、打包、安装及启动
+Docs/                     开发说明、性能及验证记录
+build/                    本机构建产物
 ```
 
 `build/`、早期录音、研究记录、本机日志与本机备份均排除在 Git 提交之外。核心 App 无外部包依赖，不需要包管理器。现有验证代码不参与正常构建。
 
-运行语音会话测试：`zsh mac-app/Tests/test-remote-voice.sh`。使用模拟协议消息和可控时钟，覆盖开关麦、迟到响应、超时、取消、尾音及 Google / 小米原语音链路，不访问蓝牙或声卡。
+目录按职责分组，App 仍一次编译为同一个可执行文件。文件与类型职责见 [开发说明](Docs/DEVELOPMENT.md)。
 
-运行手势、动作库与设置页检查：`zsh mac-app/Tests/test-button-gestures.sh`。测试使用模拟按键流与离屏 AppKit 控件，检查快捷键与媒体事件、应用路径与网址参数；不发送系统按键、不打开目标应用或网页、不修改设备映射或用户配置。设置页预览保存在 `mac-app/build/tests/`。
+构建 App 和驱动后，运行 `zsh Scripts/package.sh` 生成同事试用包，输出到 `build/share/`；包含安装包、卸载包、使用说明、当前 Git 提交的完整源码及许可证。打包前先提交源码，确保归档版本与构建代码对应。
+
+运行语音会话测试：`zsh Tests/test-remote-voice.sh`。使用模拟协议消息和可控时钟，覆盖开关麦、迟到响应、超时、取消、尾音及 Google / 小米原语音链路，不访问蓝牙或声卡。
+
+运行手势、动作库与设置页检查：`zsh Tests/test-button-gestures.sh`。测试使用模拟按键流与离屏 AppKit 控件，检查快捷键与媒体事件、应用路径与网址参数；不发送系统按键、不打开目标应用或网页、不修改设备映射或用户配置。设置页预览保存在 `build/tests/`。
 
 ## 已验证与限制
 
@@ -243,11 +252,8 @@ mac-app/
 - 已支持的遥控器 VID / PID：Google `0x18D1 / 0x9450`、小米 RC003 `0x2717 / 0x32B8`。小米连接时还校验 `RC003` 型号，未承诺支持其他小米型号。
 - 如果某些按键被遥控器配置为红外控制，它们可能不向 Mac 发送蓝牙事件，此时无法由本 App 映射。
 
-## 许可证与参考
+## 许可证
 
 本项目采用 [GPL v3](LICENSE)，随项目提供 BlackHole 衍生音频组件的对应源码。
 
-- [vibe-mote](https://github.com/Tilkmilk/vibe-mote)：遥控器辅助编程的交互参考，未使用其 Windows 注入或驱动代码。
-- [vRemoter](https://github.com/VincentKingHsu/vRemoter)：ATVV 协议实现参考及部分代码来源，保留 MIT 许可与原作者声明，见 [THIRD_PARTY_NOTICES](mac-app/THIRD_PARTY_NOTICES.md)。
-- [SayAll / remote-mic-app](https://github.com/HD838A/remote-mic-app)：小米 RC003 语音协议、解码和 F5 识别参考，GPL-3.0-only；归属与改动见同一 THIRD_PARTY_NOTICES。
-- [BlackHole](https://github.com/ExistentialAudio/BlackHole)：虚拟麦克风基础代码，GPL v3，修改说明见 [Driver/SOURCE.md](mac-app/Driver/SOURCE.md)。
+虚拟麦克风基于 [BlackHole](https://github.com/ExistentialAudio/BlackHole)，沿用 GPL v3；源码、许可与修改说明见 [Driver/SOURCE.md](Driver/SOURCE.md)。

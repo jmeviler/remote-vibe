@@ -233,55 +233,38 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(withTitle: "退出", action: #selector(quit), keyEquivalent: "q")
         for entry in menu.items { entry.target = self }
         item.menu = menu
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 820), styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let visible = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: min(1080, visible.width - 64), height: min(812, visible.height - 76)),
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.delegate = self
         window.title = "Remote Vibe · 遥控器设置"
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = StudioTheme.canvas
+        window.appearance = NSAppearance(named: .aqua)
+        window.contentMinSize = NSSize(width: 900, height: 640)
         window.isReleasedWhenClosed = false
         window.center()
-        let stack = NSStackView()
-        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 8
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        window.contentView!.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: window.contentView!.topAnchor, constant: 18),
-            stack.leadingAnchor.constraint(equalTo: window.contentView!.leadingAnchor, constant: 24),
-            stack.trailingAnchor.constraint(equalTo: window.contentView!.trailingAnchor, constant: -24)
-        ])
-        let title = NSTextField(labelWithString: "你的遥控器，你来定义")
-        title.font = .boldSystemFont(ofSize: 24)
-        stack.addArrangedSubview(title)
         remotePicker = NSPopUpButton()
         remotePicker.addItems(withTitles: RemoteProfile.allCases.map { $0.title })
         remotePicker.selectItem(at: RemoteProfile.allCases.firstIndex(of: remote.profile) ?? 0)
         remotePicker.target = self; remotePicker.action = #selector(changeRemote)
-        discoveryButton = NSButton(title: "扫描遥控器", target: self, action: #selector(toggleDiscovery))
-        let remoteRow = NSStackView(views: [NSTextField(labelWithString: "当前遥控器"), remotePicker, discoveryButton])
-        remoteRow.spacing = 12
-        stack.addArrangedSubview(remoteRow)
-        stack.addArrangedSubview(NSTextField(labelWithString: "点击遥控器上的按键，选择功能。每种遥控器分别保存，语音键始终按住说话。"))
+        discoveryButton = StudioTheme.button("扫描遥控器", target: self, action: #selector(toggleDiscovery))
         pages = NSSegmentedControl(labels: ["按键映射", "连招解锁"], trackingMode: .selectOne, target: self, action: #selector(changePage))
         pages.selectedSegment = 0
-        stack.addArrangedSubview(pages)
-        let content = NSView()
-        content.widthAnchor.constraint(equalToConstant: 772).isActive = true
-        content.heightAnchor.constraint(equalToConstant: 540).isActive = true
         mappingView = KeyMappingView(mapping: mapping)
-        mappingView.frame = NSRect(x: 0, y: 0, width: 772, height: 540)
         unlockView = ComboUnlockView(controller: unlock, allowPermissions: { [weak self] in self?.mappingView.allowListener() })
         unlockView.isHidden = true
-        content.addSubview(mappingView); content.addSubview(unlockView)
-        stack.addArrangedSubview(content)
-        let deviceRow = NSStackView(views: [connection, audioLabel])
-        deviceRow.orientation = .vertical; deviceRow.alignment = .leading; deviceRow.spacing = 2
-        connection.widthAnchor.constraint(equalToConstant: 760).isActive = true
-        stack.addArrangedSubview(deviceRow)
-        let permissionsButton = NSButton(title: "权限设置", target: self, action: #selector(allowFn))
-        let permissionRow = NSStackView(views: [permission, permissionsButton])
-        permissionRow.spacing = 12
-        stack.addArrangedSubview(permissionRow)
-        message.font = .systemFont(ofSize: 12, weight: .medium)
-        message.widthAnchor.constraint(equalToConstant: 760).isActive = true
-        stack.addArrangedSubview(message)
+        let permissionsButton = StudioTheme.button("权限设置", target: self, action: #selector(allowFn))
+        let shell = StudioShell(mapping: mappingView, unlock: unlockView, remote: remotePicker, discovery: discoveryButton,
+            pages: pages, connection: connection, audio: audioLabel, permission: permission,
+            permissionsButton: permissionsButton, message: message)
+        let scroll = StudioScrollView(frame: window.contentView!.bounds)
+        scroll.autoresizingMask = [.width, .height]
+        scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = false; scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.backgroundColor = StudioTheme.canvas
+        scroll.documentView = shell
+        window.contentView = scroll
     }
 
     @objc private func show() {

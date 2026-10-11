@@ -8,37 +8,41 @@ struct MappingKey {
     let name: String
     let usage: UInt64
     let code: CGKeyCode
-    static let all: [MappingKey] = [
-        .init(name: "Fn", usage: fnUsage, code: 63),
-        .init(name: L("Enter 回车"), usage: 0x28, code: 36), .init(name: L("Backspace 退格删除"), usage: 0x2A, code: 51),
-        .init(name: L("Escape 取消"), usage: 0x29, code: 53), .init(name: "Tab", usage: 0x2B, code: 48),
-        .init(name: L("Space 空格"), usage: 0x2C, code: 49),
-        .init(name: L("↑ 上"), usage: 0x52, code: 126), .init(name: L("↓ 下"), usage: 0x51, code: 125),
-        .init(name: L("← 左"), usage: 0x50, code: 123), .init(name: L("→ 右"), usage: 0x4F, code: 124),
-        .init(name: L("Delete 向后删除"), usage: 0x4C, code: 117),
-        .init(name: "Home", usage: 0x4A, code: 115), .init(name: "End", usage: 0x4D, code: 119),
-        .init(name: "Page Up", usage: 0x4B, code: 116), .init(name: "Page Down", usage: 0x4E, code: 121)
-    ] + zip(Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), [0,11,8,2,14,3,5,4,34,38,40,37,46,45,31,35,12,15,1,17,32,9,13,7,16,6])
-        .enumerated().map { .init(name: String($0.element.0), usage: UInt64(4 + $0.offset), code: CGKeyCode($0.element.1)) }
-      + zip(Array("1234567890"), [18,19,20,21,23,22,26,28,25,29])
-        .enumerated().map { .init(name: String($0.element.0), usage: UInt64(0x1E + $0.offset), code: CGKeyCode($0.element.1)) }
-      + [122,120,99,118,96,97,98,100,101,109,103,111].enumerated()
-        .map { .init(name: "F\($0.offset + 1)", usage: UInt64(0x3A + $0.offset), code: CGKeyCode($0.element)) }
-      + [105,107,113,106,64,79,80,90].enumerated()
-        .map { .init(name: "F\($0.offset + 13)", usage: UInt64(0x68 + $0.offset), code: CGKeyCode($0.element)) }
-      + [.init(name: "[", usage: 0x2F, code: 33), .init(name: "]", usage: 0x30, code: 30),
-         .init(name: "/", usage: 0x38, code: 44), .init(name: "-", usage: 0x2D, code: 27),
-         .init(name: "=", usage: 0x2E, code: 24), .init(name: ".", usage: 0x37, code: 47),
-         .init(name: ",", usage: 0x36, code: 43), .init(name: ";", usage: 0x33, code: 41),
-         .init(name: "`", usage: 0x35, code: 50), .init(name: "'", usage: 0x34, code: 39),
-         .init(name: "\\", usage: 0x31, code: 42)]
-      + [83,84,85,86,87,88,89,91,92].enumerated()
-        .map { .init(name: L("小键盘 %@", String($0.offset + 1)), usage: UInt64(0x59 + $0.offset), code: CGKeyCode($0.element)) }
-      + [.init(name: L("小键盘 0"), usage: 0x62, code: 82), .init(name: L("小键盘 ."), usage: 0x63, code: 65),
-         .init(name: L("小键盘 Enter"), usage: 0x58, code: 76), .init(name: L("小键盘 +"), usage: 0x57, code: 69),
-         .init(name: L("小键盘 −"), usage: 0x56, code: 78), .init(name: L("小键盘 ×"), usage: 0x55, code: 67),
-         .init(name: L("小键盘 ÷"), usage: 0x54, code: 75), .init(name: L("小键盘 ="), usage: 0x67, code: 81),
-         .init(name: L("小键盘 Clear"), usage: 0x53, code: 71)]
+    static let all: [MappingKey] = {
+        var keys: [MappingKey] = [
+            .init(name: "Fn", usage: fnUsage, code: 63),
+            .init(name: L("Enter 回车"), usage: 0x28, code: 36), .init(name: L("Backspace 退格删除"), usage: 0x2A, code: 51),
+            .init(name: L("Escape 取消"), usage: 0x29, code: 53), .init(name: "Tab", usage: 0x2B, code: 48),
+            .init(name: L("Space 空格"), usage: 0x2C, code: 49),
+            .init(name: L("↑ 上"), usage: 0x52, code: 126), .init(name: L("↓ 下"), usage: 0x51, code: 125),
+            .init(name: L("← 左"), usage: 0x50, code: 123), .init(name: L("→ 右"), usage: 0x4F, code: 124),
+            .init(name: L("Delete 向后删除"), usage: 0x4C, code: 117),
+            .init(name: "Home", usage: 0x4A, code: 115), .init(name: "End", usage: 0x4D, code: 119),
+            .init(name: "Page Up", usage: 0x4B, code: 116), .init(name: "Page Down", usage: 0x4E, code: 121)
+        ]
+        keys += zip(Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), [0,11,8,2,14,3,5,4,34,38,40,37,46,45,31,35,12,15,1,17,32,9,13,7,16,6])
+            .enumerated().map { .init(name: String($0.element.0), usage: UInt64(4 + $0.offset), code: CGKeyCode($0.element.1)) }
+        keys += zip(Array("1234567890"), [18,19,20,21,23,22,26,28,25,29])
+            .enumerated().map { .init(name: String($0.element.0), usage: UInt64(0x1E + $0.offset), code: CGKeyCode($0.element.1)) }
+        keys += [122,120,99,118,96,97,98,100,101,109,103,111].enumerated()
+            .map { .init(name: "F\($0.offset + 1)", usage: UInt64(0x3A + $0.offset), code: CGKeyCode($0.element)) }
+        keys += [105,107,113,106,64,79,80,90].enumerated()
+            .map { .init(name: "F\($0.offset + 13)", usage: UInt64(0x68 + $0.offset), code: CGKeyCode($0.element)) }
+        keys += [.init(name: "[", usage: 0x2F, code: 33), .init(name: "]", usage: 0x30, code: 30),
+            .init(name: "/", usage: 0x38, code: 44), .init(name: "-", usage: 0x2D, code: 27),
+            .init(name: "=", usage: 0x2E, code: 24), .init(name: ".", usage: 0x37, code: 47),
+            .init(name: ",", usage: 0x36, code: 43), .init(name: ";", usage: 0x33, code: 41),
+            .init(name: "`", usage: 0x35, code: 50), .init(name: "'", usage: 0x34, code: 39),
+            .init(name: "\\", usage: 0x31, code: 42)]
+        keys += [83,84,85,86,87,88,89,91,92].enumerated()
+            .map { .init(name: L("小键盘 %@", String($0.offset + 1)), usage: UInt64(0x59 + $0.offset), code: CGKeyCode($0.element)) }
+        keys += [.init(name: L("小键盘 0"), usage: 0x62, code: 82), .init(name: L("小键盘 ."), usage: 0x63, code: 65),
+            .init(name: L("小键盘 Enter"), usage: 0x58, code: 76), .init(name: L("小键盘 +"), usage: 0x57, code: 69),
+            .init(name: L("小键盘 −"), usage: 0x56, code: 78), .init(name: L("小键盘 ×"), usage: 0x55, code: 67),
+            .init(name: L("小键盘 ÷"), usage: 0x54, code: 75), .init(name: L("小键盘 ="), usage: 0x67, code: 81),
+            .init(name: L("小键盘 Clear"), usage: 0x53, code: 71)]
+        return keys
+    }()
 }
 
 struct ButtonAction: Codable, Equatable {

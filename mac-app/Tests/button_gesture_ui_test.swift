@@ -112,6 +112,25 @@ enum ButtonGestureUITest {
         let chooser = all.compactMap { $0 as? NSButton }.first { $0.title == "选择应用…" }!
         precondition(!chooser.isHidden && chooser.isEnabled)
         change(reset)
+        selectTrigger(0)
+        let voiceIndex = ActionCatalog.presets.firstIndex { $0.binding?.kind == .remoteVoice }!
+        let voiceItem = action.itemArray.first { $0.tag == voiceIndex && !$0.isSectionHeader }!
+        precondition(voiceItem.isHidden == (profile == .xiaomiRC003))
+        if profile == .chromecast {
+            choose("遥控器语音（按住说话）")
+            precondition(save.isEnabled)
+            selectTrigger(2)
+            choose("遥控器语音（长按后开麦）")
+            precondition(!save.isEnabled) // immediate hold cannot also wait for gestures
+            selectTrigger(0)
+            choose("Enter 回车 / 确认")
+            precondition(save.isEnabled)
+            selectTrigger(1)
+            precondition(!voiceItem.isEnabled)
+            selectTrigger(2)
+            precondition(voiceItem.isEnabled && action.titleOfSelectedItem == "遥控器语音（长按后开麦）")
+        }
+        change(reset)
         selectButton(0)
         precondition(!trigger.isEnabled && !action.isEnabled && !reset.isEnabled)
         precondition(mapping.bindings.isEmpty && !mapping.listening)

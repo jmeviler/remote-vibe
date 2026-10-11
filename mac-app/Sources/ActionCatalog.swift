@@ -17,6 +17,7 @@ enum ActionCatalog {
     static let presets: [ActionPreset] = [
         action("基本按键", "原按键功能", .original), action("基本按键", "不执行", .disabled),
         key("基本按键", "Fn（按住 / 松开）", MappingKey.fnUsage),
+        action("基本按键", "遥控器语音（按住说话）", .remoteVoice),
         key("基本按键", "Enter 回车 / 确认", 0x28), key("基本按键", "Backspace 退格删除", 0x2A),
         key("基本按键", "Escape 取消", 0x29), key("基本按键", "Space 空格", 0x2C),
         key("基本按键", "Tab 下一项", 0x2B), key("基本按键", "Shift + Tab 上一项", 0x2B, .maskShift),

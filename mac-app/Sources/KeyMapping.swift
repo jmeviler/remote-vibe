@@ -44,7 +44,7 @@ struct MappingKey {
 struct KeyBinding: Codable, Equatable {
     enum Kind: String, Codable {
         case original, disabled, key, scrollUp, scrollDown, scrollLeft, scrollRight
-        case nextDisplay, nextWindow, text, systemKey, openApp, openURL
+        case nextDisplay, nextWindow, text, systemKey, openApp, openURL, remoteVoice
     }
     var kind: Kind
     var usage: UInt64 = 0x28
@@ -53,15 +53,17 @@ struct KeyBinding: Codable, Equatable {
     var appPath: String?
     var url: String?
     var isFn: Bool { kind == .key && usage == MappingKey.fnUsage }
+    var requiresHold: Bool { isFn || kind == .remoteVoice }
     var isScroll: Bool { [.scrollUp, .scrollDown, .scrollLeft, .scrollRight].contains(kind) }
     var usesListener: Bool {
-        isFn || kind == .text || isScroll || kind == .nextDisplay || kind == .nextWindow ||
+        requiresHold || kind == .text || isScroll || kind == .nextDisplay || kind == .nextWindow ||
         kind == .systemKey || kind == .openApp || kind == .openURL ||
         (kind == .key && (modifiers != 0 || usage == 0x29))
     }
     var key: MappingKey? { MappingKey.all.first { $0.usage == usage } }
     var isValid: Bool {
         let allowed = CGEventFlags([.maskControl, .maskAlternate, .maskShift, .maskCommand, .maskSecondaryFn]).rawValue
+        if kind == .remoteVoice { return modifiers == 0 }
         if kind == .systemKey { return SystemControl(rawValue: usage) != nil && modifiers == 0 }
         return kind != .key || (key != nil && modifiers & ~allowed == 0 && (!isFn || modifiers == 0))
     }
@@ -80,6 +82,7 @@ struct KeyBinding: Codable, Equatable {
     }
     var title: String {
         switch kind {
+        case .remoteVoice: return "遥控器语音（按住说话）"
         case .original: return "原按键功能"
         case .disabled: return "不执行"
         case .scrollUp: return "向上滚动"
@@ -150,8 +153,17 @@ struct ButtonBinding: Codable, Equatable {
         if let error = [singleClick, doubleClick, longPress].compactMap({ $0?.configurationError }).first { return error }
         if hasGestures && singleClick.kind == .original { return "使用双击或长按前，请为单击选择明确动作（也可选“不执行”）。" }
         if hasGestures && singleClick.isFn { return "单击 Fn 需要按下即保持；请将 Fn 放到长按，或取消双击和长按。" }
+        if hasGestures && singleClick.kind == .remoteVoice { return "单击遥控器语音需要按下即开麦；请将语音放到长按，或取消双击和长按。" }
+        if doubleClick?.kind == .remoteVoice { return "双击不支持按住说话；请将遥控器语音放到长按。" }
         if doubleClick?.isFn == true { return "双击不支持保持 Fn；请将 Fn 放到长按。" }
         if doubleClick?.kind == .original || longPress?.kind == .original { return "双击和长按需要选择明确动作。" }
+        return nil
+    }
+    func validationMessage(for profile: RemoteProfile) -> String? {
+        if let validationMessage { return validationMessage }
+        if profile != .chromecast && [singleClick, doubleClick, longPress].contains(where: { $0?.kind == .remoteVoice }) {
+            return "普通键开麦目前仅支持 Google；小米请使用原语音键。"
+        }
         return nil
     }
     var summary: String {
@@ -237,6 +249,10 @@ final class KeyMapping {
     private var fnButtons = Set<UInt8>()
     var fnHeld: Bool { mappedFn.held }
     var onFnChange: (() -> Void)?
+    private var voiceButton: UInt8?
+    var onVoicePress: () -> Bool = { false }
+    var onVoiceRelease: (Bool) -> Void = { _ in }
+    var mappedVoiceHeld: Bool { voiceButton != nil }
     private var repeats: [UInt8: Timer] = [:]
     private var gestures = ButtonGestureRecognizer()
     private struct GestureTimerKey: Hashable {
@@ -289,7 +305,7 @@ final class KeyMapping {
            let stored = try? JSONDecoder().decode(Bindings.self, from: data) {
             return stored.filter { code, b in
                 MappedButton.buttons(for: profile).contains { String($0.code) == code } &&
-                b.validationMessage == nil
+                b.validationMessage(for: profile) == nil
             }
         } else { return [:] }
     }
@@ -309,6 +325,7 @@ final class KeyMapping {
     func capture(_ codes: Set<UInt8>) {
         guard codes != capturedButtons else { pendingCapture = nil; return }
         releaseMappedFn()
+        releaseMappedVoice(normal: false)
         cancelPendingActions()
         // Restore normal mappings after the last captured press has been released.
         guard capturedButtons.isEmpty || held.isEmpty else { pendingCapture = codes; return }
@@ -320,8 +337,9 @@ final class KeyMapping {
     }
 
     func save(_ values: Bindings) {
-        if let error = values.values.compactMap(\.validationMessage).first { status = error; return }
+        if let error = values.values.compactMap({ $0.validationMessage(for: profile) }).first { status = error; return }
         releaseMappedFn()
+        releaseMappedVoice(normal: false)
         cancelPendingActions()
         actionFeedback = nil
         bindings = values
@@ -391,6 +409,7 @@ final class KeyMapping {
         if !connected { activeShortcuts.removeAll(); cancelRepeats(); held.removeAll() }
         if !previousShortcuts.isSubset(of: activeShortcuts) { cancelPendingActions() }
         if !fnButtons.isSubset(of: activeShortcuts) { releaseMappedFn() }
+        if let voiceButton, !activeShortcuts.contains(voiceButton) { releaseMappedVoice(normal: false) }
         snapshots = snapshots.filter { present.contains($0.key) }
         status = !connected ? "设置已保存 · 等待遥控器连接" : !applied ? "按键设置未能生效，请检查权限" :
             needsApply ? "按键设置被其他程序更改 · 保存可重新应用" :
@@ -455,6 +474,7 @@ final class KeyMapping {
         held = pressed
         fnButtons.subtract(released)
         if fnButtons.isEmpty { releaseMappedFn() }
+        if let voiceButton, released.contains(voiceButton) { releaseMappedVoice(normal: true) }
         if pressed.isEmpty, let pendingCapture { capture(pendingCapture) }
         for code in released.sorted() {
             execute(gestures.release(code, at: ProcessInfo.processInfo.systemUptime))
@@ -519,12 +539,13 @@ final class KeyMapping {
                 }) else {
                     cancelPendingActions()
                     releaseMappedFn()
+                    releaseMappedVoice(normal: false)
                     needsApply = true
                     status = "按键设置已变化，本次手势已取消 · 保存可重新应用"
                     return
                 }
-                // A delayed long-press callback must never leave Fn down after release.
-                if value.isFn && !held.contains(code) { continue }
+                // A delayed long-press callback must never start a hold after release.
+                if value.requiresHold && !held.contains(code) { continue }
                 perform(value, button: code)
             }
         }
@@ -532,7 +553,14 @@ final class KeyMapping {
 
     private func perform(_ value: KeyBinding, button: UInt8, targetPID: pid_t? = nil) {
         guard AXIsProcessTrusted() else { return }
-        if value.isFn {
+        if value.kind == .remoteVoice {
+            guard profile == .chromecast, held.contains(button), voiceButton == nil else { return }
+            voiceButton = button
+            if !onVoicePress() {
+                voiceButton = nil
+                feedback("语音未启动，请检查 Google 连接、权限或等待上一段结束")
+            }
+        } else if value.isFn {
             let wasHeld = mappedFn.held
             guard mappedFn.down() else {
                 status = "Fn 已被按住或没有权限，本次未接管"
@@ -638,7 +666,15 @@ final class KeyMapping {
         gestures.reset()
     }
 
-    func suspendActions() { releaseMappedFn(); cancelRepeats(); cancelPendingActions() }
+    func suspendActions() {
+        releaseMappedFn(); releaseMappedVoice(normal: false); cancelRepeats(); cancelPendingActions()
+    }
+
+    private func releaseMappedVoice(normal: Bool) {
+        guard voiceButton != nil else { return }
+        voiceButton = nil
+        onVoiceRelease(normal)
+    }
 
     private func releaseMappedFn() {
         fnButtons.removeAll()
@@ -650,6 +686,7 @@ final class KeyMapping {
     private func cancelRepeats() { repeats.values.forEach { $0.invalidate() }; repeats.removeAll() }
 
     private func stopListener() {
+        releaseMappedVoice(normal: false)
         releaseMappedFn()
         if manager != nil { cancelPendingActions() }
         cancelRepeats(); held.removeAll()

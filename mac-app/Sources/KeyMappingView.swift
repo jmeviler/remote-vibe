@@ -243,6 +243,11 @@ final class KeyMappingView: NSView, NSTextViewDelegate, NSTextFieldDelegate {
         presetItem(0)?.title = selectedTrigger == .singleClick ? "原按键功能" : "未设置"
         presetItem(2)?.title = selectedTrigger == .longPress ? "Fn（长按后保持，松开释放）" : presets[2].title
         presetItem(2)?.isEnabled = selectedTrigger != .doubleClick
+        if let voiceIndex = presets.firstIndex(where: { $0.binding?.kind == .remoteVoice }), let item = presetItem(voiceIndex) {
+            item.isHidden = mapping.profile != .chromecast
+            item.isEnabled = selectedTrigger != .doubleClick
+            item.title = selectedTrigger == .longPress ? "遥控器语音（长按后开麦）" : presets[voiceIndex].title
+        }
         keyPicker.item(at: 0)?.isEnabled = selectedTrigger != .doubleClick
         let value = selectedBinding
         let unset = selectedTrigger != .singleClick && selectedConfiguration[selectedTrigger] == nil
@@ -273,6 +278,11 @@ final class KeyMappingView: NSView, NSTextViewDelegate, NSTextFieldDelegate {
         targetField.placeholderString = app ? "点击下方按钮选择 .app" : "https://example.com"
         chooseAppButton.isHidden = !app
         if selected == 0 { hint.stringValue = "语音功能已固定保留，当前无需设置。" }
+        else if selectedBinding.kind == .remoteVoice {
+            hint.stringValue = selectedTrigger == .longPress ?
+                "按住约 0.55 秒后，用 Google 遥控器麦克风说话；松开结束。\n与原语音键使用相同的语音输入流程。" :
+                "按下就用 Google 遥控器麦克风说话，松开结束。\n请先将光标放在目标输入框中。"
+        }
         else if selectedBinding.isFn {
             hint.stringValue = selectedTrigger == .longPress ?
                 "按住约 0.55 秒后保持 Fn，松开即释放。\n不会开启遥控器麦克风，也不会切换系统输入设备。" :
@@ -302,7 +312,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate, NSTextFieldDelegate {
             hint.stringValue = "切换按键后，未保存的修改也会保留。\n点击「保存并生效」后一起应用并记住。"
         }
         if selected != 0 {
-            if let error = selectedConfiguration.validationMessage {
+            if let error = selectedConfiguration.validationMessage(for: mapping.profile) {
                 hint.stringValue = error
             } else if selectedConfiguration.hasGestures || selectedTrigger != .singleClick {
                 var timing = selectedConfiguration.doubleClick != nil ?
@@ -411,7 +421,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate, NSTextFieldDelegate {
     func refreshStatus() {
         let dirty = drafts != mapping.bindings
         let invalid = mapping.buttons.compactMap { button -> String? in
-            drafts[String(button.code)]?.validationMessage.map { "\(button.name)：\($0)" }
+            drafts[String(button.code)]?.validationMessage(for: mapping.profile).map { "\(button.name)：\($0)" }
         }.first
         liveStatus.stringValue = invalid ?? (dirty ? "有未保存的修改" : mapping.status)
         permissionButton.isHidden = (mapping.listeningAllowed && AXIsProcessTrusted()) ||

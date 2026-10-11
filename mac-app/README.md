@@ -17,6 +17,7 @@ open "build/Remote Vibe.app"
 - `KeyMappingView.swift`：AppKit 遥控器布局和配置界面，图形由原生控件绘制。
 - `DesktopActions.swift`：按需查询可见窗口、双屏切换与稳定的同屏窗口循环。
 - `WeChatApp.swift`：菜单栏、窗口及语音会话协调。
+- `RemoteAudioSession.swift`：物理语音键与 Google 普通键开麦的会话、超时、尾音及取消处理。
 - `VoiceRemote.swift`、`RemoteProfile.swift`：单只遥控器的型号选择和切换。
 - `Remote.swift`、`ATVVProtocol.swift`、`ADPCMDecoder.swift`：蓝牙语音连接与分型号解码，Google 保留原参数。
 - `XiaomiVoiceKey.swift`：只在小米语音就绪时临时屏蔽其原始 F5，退出或切换时恢复。
@@ -33,3 +34,5 @@ open "build/Remote Vibe.app"
 构建前一版 App 自动保存在本机 `build/Remote Vibe.previous.*.app`。编译产物与备份不纳入源码发布。
 
 回退到旧版时应同时恢复该版本的配置快照：旧版不认识新增动作类型。可用 `defaults export local.ben.RemoteVibe 路径.plist` 备份偏好，在退出 App 后用 `defaults import local.ben.RemoteVibe 路径.plist` 恢复，再运行对应旧构建。
+
+0.4.1 新增 Google **遥控器语音** 动作，可将普通键设为按下即开麦或长按后开麦，松开结束。Fn 映射的用途不变；小米继续使用原语音键。设置方法见主 README，验证边界见 [GOOGLE-VOICE-VALIDATION.md](Tests/GOOGLE-VOICE-VALIDATION.md)。运行 `zsh Tests/test-remote-voice.sh` 验证语音会话和两种型号的原语音路径。

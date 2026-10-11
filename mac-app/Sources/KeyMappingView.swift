@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 private final class RemoteKeyButton: NSButton {
     var selected = false { didSet { needsDisplay = true } }
@@ -28,7 +29,7 @@ private final class RemoteDiagram: NSView {
     }
 }
 
-final class KeyMappingView: NSView, NSTextViewDelegate {
+final class KeyMappingView: NSView, NSTextViewDelegate, NSTextFieldDelegate {
     override var isFlipped: Bool { true }
     private let mapping: KeyMapping
     private var drafts: KeyMapping.Bindings
@@ -38,10 +39,14 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
     private let diagram = RemoteDiagram(frame: NSRect(x: 0, y: 0, width: 305, height: 540))
     private let nameLabel = NSTextField(labelWithString: "静音")
     private let currentLabel = NSTextField(wrappingLabelWithString: "")
+    private let triggerPicker = NSSegmentedControl()
     private let actionPicker = NSPopUpButton(frame: .zero, pullsDown: false)
     private let keyPicker = NSPopUpButton(frame: .zero, pullsDown: false)
     private let textEditor = NSTextView()
     private let textScroll = NSScrollView()
+    private let targetLabel = NSTextField(labelWithString: "")
+    private let targetField = NSTextField(string: "")
+    private let chooseAppButton = NSButton(title: "选择应用…", target: nil, action: nil)
     private let modifierLabel = NSTextField(labelWithString: "组合键（可多选）")
     private let hint = NSTextField(wrappingLabelWithString: "")
     private let saveButton = NSButton(title: "保存并生效", target: nil, action: nil)
@@ -50,26 +55,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
     private let liveStatus = NSTextField(wrappingLabelWithString: "")
     private var modifierButtons: [(NSButton, CGEventFlags)] = []
     private var remoteButtons: [UInt8: RemoteKeyButton] = [:]
-    private let presets: [(String, KeyBinding?)] = [
-        ("原按键功能", .init(kind: .original)), ("不执行", .init(kind: .disabled)),
-        ("Fn（按住 / 松开）", .init(kind: .key, usage: MappingKey.fnUsage)),
-        ("Enter 回车 / 确认", .init(kind: .key, usage: 0x28)),
-        ("Backspace 退格删除", .init(kind: .key, usage: 0x2A)),
-        ("Escape 取消", .init(kind: .key, usage: 0x29)),
-        ("↑ 方向上", .init(kind: .key, usage: 0x52)), ("↓ 方向下", .init(kind: .key, usage: 0x51)),
-        ("← 方向左", .init(kind: .key, usage: 0x50)), ("→ 方向右", .init(kind: .key, usage: 0x4F)),
-        ("Tab 下一项", .init(kind: .key, usage: 0x2B)),
-        ("Shift + Tab 上一项", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags.maskShift.rawValue)),
-        ("Command + Tab 切换应用", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags.maskCommand.rawValue)),
-        ("Command + Shift + Tab 反向切换应用", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags([.maskCommand, .maskShift]).rawValue)),
-        ("Control + Tab", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags.maskControl.rawValue)),
-        ("Control + Shift + Tab", .init(kind: .key, usage: 0x2B, modifiers: CGEventFlags([.maskControl, .maskShift]).rawValue)),
-        ("Space 空格", .init(kind: .key, usage: 0x2C)),
-        ("向上滚动", .init(kind: .scrollUp)), ("向下滚动", .init(kind: .scrollDown)),
-        ("切换屏幕", .init(kind: .nextDisplay)), ("切换当前屏幕窗口", .init(kind: .nextWindow)),
-        ("输入常用文本", .init(kind: .text)),
-        ("自定义按键 / 组合快捷键…", nil)
-    ]
+    private let presets = ActionCatalog.presets
 
     init(mapping: KeyMapping) {
         self.mapping = mapping
@@ -84,10 +70,29 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         place(nameLabel, y: 20, h: 36)
         currentLabel.textColor = .secondaryLabelColor
         place(currentLabel, y: 65, h: 45)
-        let choose = NSTextField(labelWithString: "这个按键要做什么")
-        choose.font = .systemFont(ofSize: 13, weight: .medium)
-        place(choose, y: 125, h: 22)
-        actionPicker.addItems(withTitles: presets.map { $0.0 })
+        triggerPicker.segmentCount = ButtonTrigger.allCases.count
+        for (index, trigger) in ButtonTrigger.allCases.enumerated() {
+            triggerPicker.setLabel(trigger.title, forSegment: index)
+            triggerPicker.setWidth(130, forSegment: index)
+        }
+        triggerPicker.selectedSegment = 0
+        triggerPicker.target = self; triggerPicker.action = #selector(triggerChanged)
+        triggerPicker.setAccessibilityLabel("按键触发方式")
+        place(triggerPicker, y: 118, h: 28)
+        actionPicker.autoenablesItems = false
+        var group = ""
+        for (index, preset) in presets.enumerated() {
+            if preset.group != group {
+                if !group.isEmpty { actionPicker.menu?.addItem(.separator()) }
+                actionPicker.menu?.addItem(.sectionHeader(title: preset.group))
+                group = preset.group
+            }
+            let item = NSMenuItem(title: preset.title, action: nil, keyEquivalent: "")
+            item.tag = index
+            actionPicker.menu?.addItem(item)
+        }
+        actionPicker.setAccessibilityLabel("按键动作")
+        actionPicker.toolTip = "\(presets.count) 个可选项，按类别排列；单击、双击和长按分别设置"
         actionPicker.target = self; actionPicker.action = #selector(actionChanged)
         place(actionPicker, y: 154, h: 32)
         place(modifierLabel, y: 207, h: 22)
@@ -97,6 +102,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
             addSubview(button); modifierButtons.append((button, entry.1))
         }
         keyPicker.addItems(withTitles: MappingKey.all.map { $0.name })
+        keyPicker.autoenablesItems = false
         keyPicker.setAccessibilityLabel("自定义主键")
         keyPicker.target = self; keyPicker.action = #selector(customChanged)
         place(keyPicker, y: 306, h: 32)
@@ -119,12 +125,21 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         textEditor.frame = NSRect(origin: .zero, size: textScroll.contentSize)
         textEditor.minSize = NSSize(width: 0, height: textScroll.contentSize.height)
         textEditor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        place(targetLabel, y: 209, h: 24)
+        targetField.delegate = self
+        targetField.isSelectable = true
+        targetField.setAccessibilityLabel("应用路径或网页地址")
+        place(targetField, y: 244, h: 28)
+        chooseAppButton.bezelStyle = .rounded
+        chooseAppButton.target = self; chooseAppButton.action = #selector(chooseApp)
+        place(chooseAppButton, y: 286, h: 30)
         hint.textColor = .secondaryLabelColor; hint.font = .systemFont(ofSize: 12)
-        place(hint, y: 354, h: 55)
+        place(hint, y: 345, h: 73)
         saveButton.target = self; saveButton.action = #selector(saveMappings)
         saveButton.bezelStyle = .rounded; saveButton.bezelColor = .controlAccentColor
         saveButton.frame = NSRect(x: 330, y: 423, width: 155, height: 34); addSubview(saveButton)
         resetButton.target = self; resetButton.action = #selector(resetKey)
+        resetButton.toolTip = "恢复此键的单击默认值，并清除双击和长按设置"
         resetButton.bezelStyle = .rounded
         resetButton.frame = NSRect(x: 498, y: 423, width: 155, height: 34); addSubview(resetButton)
         liveStatus.font = .systemFont(ofSize: 12); liveStatus.textColor = .secondaryLabelColor
@@ -141,6 +156,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         displayedProfile = mapping.profile
         drafts = draftCache[displayedProfile] ?? mapping.bindings
         selected = displayedProfile == .chromecast ? 8 : 7
+        triggerPicker.selectedSegment = 0
         rebuildDiagram()
         displaySelection()
     }
@@ -182,7 +198,11 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         let brand = NSTextField(labelWithString: mapping.profile == .chromecast ? "Chromecast" : "小米 RC003")
         brand.font = .systemFont(ofSize: 12, weight: .medium); brand.textColor = .secondaryLabelColor
         brand.alignment = .center; brand.frame = NSRect(x: 74, y: 478, width: 133, height: 20); diagram.addSubview(brand)
-
+        let capacity = NSTextField(labelWithString: "\(mapping.buttons.count) 个普通键 · 最多 \(mapping.buttons.count * 3) 个动作位")
+        capacity.font = .systemFont(ofSize: 11); capacity.textColor = .secondaryLabelColor
+        capacity.alignment = .center
+        capacity.frame = NSRect(x: 5, y: 519, width: 295, height: 18)
+        diagram.addSubview(capacity)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -192,23 +212,43 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
     }
 
     private var selectedButton: MappedButton? { mapping.buttons.first { $0.code == selected } }
-    private var selectedBinding: KeyBinding { drafts[String(selected)] ?? selectedButton?.initial ?? .init(kind: .original) }
+    private var selectedTrigger: ButtonTrigger { ButtonTrigger.allCases[triggerPicker.selectedSegment] }
+    private var selectedPresetIndex: Int { actionPicker.selectedItem?.tag ?? 0 }
+    private func presetItem(_ index: Int) -> NSMenuItem? {
+        actionPicker.itemArray.first { !$0.isSeparatorItem && !$0.isSectionHeader && $0.tag == index }
+    }
+    private var selectedConfiguration: ButtonBinding {
+        drafts[String(selected)] ?? .init(singleClick: selectedButton?.initial ?? .init(kind: .original))
+    }
+    private var selectedBinding: KeyBinding { selectedConfiguration[selectedTrigger] ?? .init(kind: .disabled) }
+    private func setSelectedBinding(_ value: KeyBinding?) {
+        var configuration = selectedConfiguration
+        configuration[selectedTrigger] = value
+        drafts[String(selected)] = configuration
+    }
 
     @objc private func selectKey(_ sender: NSButton) { selected = UInt8(sender.tag); displaySelection() }
+    @objc private func triggerChanged() { displaySelection() }
 
     private func displaySelection() {
         for (code, button) in remoteButtons {
             button.selected = code == selected
             if let physical = mapping.buttons.first(where: { $0.code == code }) {
-                button.toolTip = "\(physical.name) → \((drafts[String(code)] ?? physical.initial).title)"
+                button.toolTip = "\(physical.name) → \((drafts[String(code)] ?? .init(singleClick: physical.initial)).summary)"
             } else { button.toolTip = "按住说话，松开结束" }
         }
         let voice = selected == 0
         nameLabel.stringValue = selectedButton?.name ?? "语音键"
-        currentLabel.stringValue = voice ? "按住说话，松开后由微信转成文字。" : "已保存：\(mapping.binding(selectedButton!).title)"
+        triggerPicker.isEnabled = !voice
+        presetItem(0)?.title = selectedTrigger == .singleClick ? "原按键功能" : "未设置"
+        presetItem(2)?.title = selectedTrigger == .longPress ? "Fn（长按后保持，松开释放）" : presets[2].title
+        presetItem(2)?.isEnabled = selectedTrigger != .doubleClick
+        keyPicker.item(at: 0)?.isEnabled = selectedTrigger != .doubleClick
         let value = selectedBinding
-        actionPicker.selectItem(at: presets.firstIndex(where: { $0.1 == value || (value.kind == .text && $0.1?.kind == .text) }) ?? presets.count - 1)
+        let unset = selectedTrigger != .singleClick && selectedConfiguration[selectedTrigger] == nil
+        actionPicker.select(presetItem(unset ? 0 : ActionCatalog.index(for: value)))
         textEditor.string = value.text ?? ""
+        targetField.stringValue = value.kind == .openApp ? value.appPath ?? "" : value.url ?? ""
         actionPicker.isEnabled = !voice; resetButton.isEnabled = !voice
         keyPicker.selectItem(at: MappingKey.all.firstIndex { $0.usage == value.usage } ?? 0)
         for (button, flag) in modifierButtons { button.state = CGEventFlags(rawValue: value.modifiers).contains(flag) ? .on : .off }
@@ -218,39 +258,73 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
 
     private func displayOptions() {
         currentLabel.stringValue = selected == 0 ? "按住说话，松开后由微信转成文字。" :
-            "当前选择：\(selectedBinding.title)\n已保存：\(mapping.binding(selectedButton!).title)"
-        if let selectedButton { remoteButtons[selected]?.toolTip = "\(selectedButton.name) → \(selectedBinding.title)" }
-        let custom = selected != 0 && actionPicker.indexOfSelectedItem == presets.count - 1
+            "\(selectedTrigger.title)：\(selectedConfiguration[selectedTrigger].map(ActionCatalog.displayName) ?? "未设置")\n已保存：\(mapping.binding(selectedButton!)[selectedTrigger].map(ActionCatalog.displayName) ?? "未设置")"
+        if let selectedButton { remoteButtons[selected]?.toolTip = "\(selectedButton.name) → \(selectedConfiguration.summary)" }
+        let custom = selected != 0 && selectedPresetIndex == presets.count - 1
         modifierLabel.isHidden = !custom; keyPicker.isHidden = !custom
         modifierButtons.forEach { $0.0.isHidden = !custom; $0.0.isEnabled = !selectedBinding.isFn }
         textScroll.isHidden = selected == 0 || selectedBinding.kind != .text
+        let app = selected != 0 && selectedBinding.kind == .openApp
+        let webpage = selected != 0 && selectedBinding.kind == .openURL
+        targetLabel.isHidden = !app && !webpage
+        targetField.isHidden = !app && !webpage
+        targetLabel.stringValue = app ? "要打开的 Mac 应用" : "要打开的网页地址"
+        targetField.isEditable = webpage
+        targetField.placeholderString = app ? "点击下方按钮选择 .app" : "https://example.com"
+        chooseAppButton.isHidden = !app
         if selected == 0 { hint.stringValue = "语音功能已固定保留，当前无需设置。" }
         else if selectedBinding.isFn {
-            hint.stringValue = "按住此键保持 Fn，松开即释放；用途由系统或软件决定。\n不会开启遥控器麦克风，也不会切换系统输入设备。"
+            hint.stringValue = selectedTrigger == .longPress ?
+                "按住约 0.55 秒后保持 Fn，松开即释放。\n不会开启遥控器麦克风，也不会切换系统输入设备。" :
+                "按住此键保持 Fn，松开即释放；用途由系统或软件决定。\n不会开启遥控器麦克风，也不会切换系统输入设备。"
         }
         else if selectedBinding.kind == .text {
             hint.stringValue = "先将光标放入目标输入框，再按遥控器。\n按一次粘贴一次，不发送回车；文本保存在本机。"
+        }
+        else if app {
+            hint.stringValue = "按一次打开并激活所选应用，已运行时切换到它。\n每个按键、每种触发方式可选择不同应用。"
+        } else if webpage {
+            hint.stringValue = "按一次交给默认浏览器打开，可能新建标签页。\n支持 http:// 和 https:// 地址。"
+        } else if selectedBinding.kind == .systemKey {
+            hint.stringValue = "发送一次系统音量、亮度或媒体按键。\n亮度取决于显示器支持，播放控制取决于当前媒体应用。"
         }
         else if selectedBinding.kind == .nextDisplay {
             hint.stringValue = "切到下一块屏幕的可见窗口，鼠标随之移入。\n不移动窗口，不切换桌面空间；按一次切换一次。"
         } else if selectedBinding.kind == .nextWindow {
             hint.stringValue = "在当前屏幕的可见普通窗口间循环。\n跳过最小化窗口；按一次切换一次。"
-        } else if custom || selectedBinding.modifiers != 0 {
+        } else if custom {
             hint.stringValue = "可多选修饰键，例如 Control + Shift + ↑。\n按一次发送一次；实际用途由当前软件决定。"
+        } else if selectedBinding.modifiers != 0 {
+            hint.stringValue = "发送 \(selectedBinding.title)；按一次执行一次。\n用途取决于当前软件和系统快捷键设置。"
         } else if selectedBinding.kind == .key && selectedBinding.usage == 0x29 {
             hint.stringValue = "发送一次 Esc；长按不连发。\n可用于当前软件支持的取消或停止操作。"
         } else {
             hint.stringValue = "切换按键后，未保存的修改也会保留。\n点击「保存并生效」后一起应用并记住。"
         }
+        if selected != 0 {
+            if let error = selectedConfiguration.validationMessage {
+                hint.stringValue = error
+            } else if selectedConfiguration.hasGestures || selectedTrigger != .singleClick {
+                var timing = selectedConfiguration.doubleClick != nil ?
+                    "双击间隔 0.3 秒；单击松开后等待。" : "短按松开即触发单击。"
+                if selectedConfiguration.longPress != nil { timing += "长按 0.55 秒。" }
+                hint.stringValue += "\n" + (selectedConfiguration.hasGestures ? timing + "不连发。" : "未设置时不识别此手势，单击保持原有响应。")
+            }
+        }
     }
 
     @objc private func actionChanged() {
         guard selectedButton != nil else { return }
-        if let value = presets[actionPicker.indexOfSelectedItem].1 {
+        if selectedTrigger != .singleClick && selectedPresetIndex == 0 {
+            setSelectedBinding(nil)
+        } else if let value = presets[selectedPresetIndex].binding {
             var next = value
             if next.kind == .text { next.text = selectedBinding.text ?? "" }
-            drafts[String(selected)] = next
+            if next.kind == .openApp { next.appPath = selectedBinding.appPath }
+            if next.kind == .openURL { next.url = selectedBinding.url }
+            setSelectedBinding(next)
             textEditor.string = next.text ?? ""
+            targetField.stringValue = next.kind == .openApp ? next.appPath ?? "" : next.url ?? ""
         } else {
             let current = selectedBinding
             if current.kind == .key {
@@ -270,7 +344,7 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
             modifierButtons.forEach { $0.0.state = .off }
         }
         let flags = modifierButtons.filter { $0.0.state == .on }.reduce(UInt64(0)) { $0 | $1.1.rawValue }
-        drafts[String(selected)] = .init(kind: .key, usage: MappingKey.all[keyPicker.indexOfSelectedItem].usage, modifiers: flags)
+        setSelectedBinding(.init(kind: .key, usage: MappingKey.all[keyPicker.indexOfSelectedItem].usage, modifiers: flags))
         displayOptions(); refreshStatus()
     }
 
@@ -278,8 +352,37 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
         guard selected != 0, selectedBinding.kind == .text else { return }
         var value = selectedBinding
         value.text = textEditor.string
-        drafts[String(selected)] = value
+        setSelectedBinding(value)
         refreshStatus()
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        guard notification.object as? NSTextField === targetField, selected != 0, selectedBinding.kind == .openURL else { return }
+        var value = selectedBinding
+        value.url = targetField.stringValue
+        setSelectedBinding(value)
+        displayOptions(); refreshStatus()
+    }
+
+    @objc private func chooseApp() {
+        guard let window, selectedBinding.kind == .openApp else { return }
+        let profile = displayedProfile, code = selected, trigger = selectedTrigger
+        let panel = NSOpenPanel()
+        panel.title = "选择要打开的应用"
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .OK, let path = panel.url?.path,
+                  self.displayedProfile == profile, self.selected == code, self.selectedTrigger == trigger,
+                  self.selectedBinding.kind == .openApp else { return }
+            guard KeyMapping.applicationURL(path) != nil else { self.liveStatus.stringValue = "请选择可运行的 Mac 应用"; return }
+            var value = self.selectedBinding
+            value.appPath = path
+            self.setSelectedBinding(value)
+            self.displaySelection()
+        }
     }
 
     @objc private func saveMappings() {
@@ -307,10 +410,13 @@ final class KeyMappingView: NSView, NSTextViewDelegate {
 
     func refreshStatus() {
         let dirty = drafts != mapping.bindings
-        liveStatus.stringValue = dirty ? "有未保存的修改" : mapping.status
+        let invalid = mapping.buttons.compactMap { button -> String? in
+            drafts[String(button.code)]?.validationMessage.map { "\(button.name)：\($0)" }
+        }.first
+        liveStatus.stringValue = invalid ?? (dirty ? "有未保存的修改" : mapping.status)
         permissionButton.isHidden = (mapping.listeningAllowed && AXIsProcessTrusted()) ||
-            !mapping.buttons.contains { (drafts[String($0.code)] ?? $0.initial).usesListener }
+            !mapping.buttons.contains { (drafts[String($0.code)] ?? .init(singleClick: $0.initial)).usesListener }
         permissionButton.title = !mapping.listeningAllowed ? "允许输入监控" : "允许辅助功能"
-        saveButton.isEnabled = dirty || mapping.needsApply
+        saveButton.isEnabled = invalid == nil && (dirty || mapping.needsApply)
     }
 }

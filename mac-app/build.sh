@@ -9,7 +9,7 @@ xcrun swiftc -swift-version 5 -parse-as-library -O -target arm64-apple-macos15.0
   Sources/ATVVProtocol.swift Sources/ADPCMDecoder.swift Sources/BridgeError.swift \
   Sources/RemoteProfile.swift Sources/Remote.swift Sources/VoiceRemote.swift Sources/XiaomiVoiceKey.swift \
   Sources/FnKey.swift Sources/VirtualMicrophone.swift \
-  Sources/DesktopActions.swift Sources/TextInput.swift Sources/KeyMapping.swift Sources/KeyMappingView.swift \
+  Sources/DesktopActions.swift Sources/TextInput.swift Sources/ButtonGesture.swift Sources/ActionCatalog.swift Sources/KeyMapping.swift Sources/KeyMappingView.swift \
   Sources/ComboUnlock.swift Sources/ComboUnlockView.swift Sources/WeChatApp.swift \
   -o "$app/Contents/MacOS/RemoteVibe"
 cp Info.plist "$app/Contents/Info.plist"

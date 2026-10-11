@@ -1,6 +1,7 @@
 /recordings/
 /research/
 /mac-app/build/
+/.codex/
 __pycache__/
 .DS_Store
 *.log

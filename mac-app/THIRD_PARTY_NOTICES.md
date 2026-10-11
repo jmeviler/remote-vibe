@@ -39,3 +39,14 @@ update services, audio postprocessing or application UI are included.
 Upstream credits remote-bridge-hub, GPL-3.0-only, revision
 8a93f321ac71a602300c6cd77f7256fa4b63068e:
 https://github.com/xxb26553663-star/remote-bridge-hub
+
+Button gesture recognition reference: SayAll / remote-mic-app
+https://github.com/HD838A/remote-mic-app
+Reference revision: 007ef68fc2d5f1636d7da4476c0444f96b620b50
+Source: Sources/RemoteMic/RemoteButtonGestureRecognizer.swift
+Copyright (C) 2026 SayAll contributors. GPL-3.0-only (see LICENSE).
+ButtonGesture.swift adapts the press/release, pending single-click and long-press
+state transitions for Remote Vibe's HID button codes. It adds monotonic deadlines,
+late/early timer handling and duplicate long-press protection. The per-button
+configuration, AppKit editor and cancellable timer integration are implemented
+for Remote Vibe. No SayAll artwork or application UI is included.

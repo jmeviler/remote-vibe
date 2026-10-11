@@ -82,8 +82,9 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         remote.onSamples = { [weak self] values, rate in self?.mic.feed(values, rate: rate) }
         remote.onEnd = { [weak self] normal in self?.end(normal) }
         remote.start()
-        for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification, NSWorkspace.sessionDidResignActiveNotification] {
+        for name in [NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification, NSWorkspace.sessionDidResignActiveNotification] {
             workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                self?.mapping.suspendActions()
                 self?.refresh()
             })
         }
@@ -336,6 +337,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func save() {
         var status: [String: Any] = [
+            "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
             "mode": "wechat-hold-fn",
             "bluetoothAuthorization": CBCentralManager.authorization.rawValue,
             "accessibility": AXIsProcessTrusted(), "connected": remote.ready,
@@ -351,6 +353,7 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
             "keyMappingStatus": mapping.status, "keyMappingConnected": mapping.connected,
             "inputMonitoring": mapping.listeningAllowed,
             "shortcutListener": mapping.listening,
+            "keyActionChoices": ActionCatalog.presets.count,
             "maintenanceInterval": poll?.timeInterval ?? 0,
             "defaultInput": AudioDevices.string(AudioDevices.defaultInput(), kAudioObjectPropertyName) ?? "none"
         ]

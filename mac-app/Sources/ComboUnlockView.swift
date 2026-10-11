@@ -9,16 +9,16 @@ final class ComboUnlockView: StudioPage {
     private let status = NSTextField(wrappingLabelWithString: "")
     private let password = NSSecureTextField()
     private let enabled = NSButton(checkboxWithTitle: "开启连招解锁", target: nil, action: nil)
-    private let record = StudioButton(title: "录制连招", target: nil, action: nil)
-    private let finish = StudioButton(title: "确认录制", target: nil, action: nil)
-    private let practice = StudioButton(title: "练习", target: nil, action: nil)
-    private let cancel = StudioButton(title: "结束 / 取消", target: nil, action: nil)
-    private let save = StudioButton(title: "保存 / 更换密码", target: nil, action: nil)
-    private let clear = StudioButton(title: "清除连招与密码…", target: nil, action: nil)
-    private let verify = StudioButton(title: "开始手动锁屏验证", target: nil, action: nil)
-    private let success = StudioButton(title: "看到了测试字符", target: nil, action: nil)
-    private let failure = StudioButton(title: "没有出现", target: nil, action: nil)
-    private let permissions = StudioButton(title: "允许按键控制", target: nil, action: nil)
+    private let record = StudioTheme.button("录制连招", primary: true)
+    private let finish = StudioTheme.button("确认录制")
+    private let practice = StudioTheme.button("练习")
+    private let cancel = StudioTheme.button("结束 / 取消")
+    private let save = StudioTheme.button("保存 / 更换密码")
+    private let clear = StudioTheme.button("清除连招与密码…", destructive: true)
+    private let verify = StudioTheme.button("开始手动锁屏验证")
+    private let success = StudioTheme.button("看到了测试字符")
+    private let failure = StudioTheme.button("没有出现")
+    private let permissions = StudioTheme.button("允许按键控制")
 
     init(controller: ComboUnlock, allowPermissions: @escaping () -> Void) {
         self.controller = controller
@@ -52,7 +52,6 @@ final class ComboUnlockView: StudioPage {
         let explanation = NSTextField(wrappingLabelWithString: "语音与电源键不参与。相邻按键间隔不超过 3 秒，长按只计一次。")
         explanation.font = .systemFont(ofSize: 12); explanation.textColor = StudioTheme.secondary
         place(explanation, x: 332, y: 112, w: 660, h: 34)
-        record.primary = true
         setup(record, action: #selector(recordPressed), x: 330, y: 158, w: 128)
         setup(finish, action: #selector(finishPressed), x: 464, y: 158, w: 119)
         setup(practice, action: #selector(practicePressed), x: 589, y: 158, w: 83)
@@ -73,7 +72,6 @@ final class ComboUnlockView: StudioPage {
         enabled.target = self; enabled.action = #selector(enabledPressed)
         enabled.font = .systemFont(ofSize: 12)
         place(enabled, x: 553, y: 393, w: 232, h: 28)
-        clear.destructive = true
         setup(clear, action: #selector(clearPressed), x: 794, y: 388, w: 204)
         let limitations = NSTextField(wrappingLabelWithString: "首次默认关闭。手动锁屏验证只试填一个字符，不按回车。\n仅用于已登录后的锁屏；不支持重启或 FileVault 首次登录。")
         limitations.textColor = StudioTheme.secondary; limitations.font = .systemFont(ofSize: 11)
@@ -94,7 +92,7 @@ final class ComboUnlockView: StudioPage {
         view.frame = NSRect(x: x, y: y, width: w, height: h); addSubview(view)
     }
     private func setup(_ button: NSButton, action: Selector, x: CGFloat, y: CGFloat, w: CGFloat) {
-        button.target = self; button.action = action; button.bezelStyle = .rounded
+        button.target = self; button.action = action
         place(button, x: x, y: y, w: w, h: 38)
     }
     func refresh() {

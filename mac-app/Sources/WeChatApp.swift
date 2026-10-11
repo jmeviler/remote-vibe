@@ -248,13 +248,13 @@ final class WeChatApp: NSObject, NSApplicationDelegate, NSWindowDelegate {
         remotePicker.addItems(withTitles: RemoteProfile.allCases.map { $0.title })
         remotePicker.selectItem(at: RemoteProfile.allCases.firstIndex(of: remote.profile) ?? 0)
         remotePicker.target = self; remotePicker.action = #selector(changeRemote)
-        discoveryButton = StudioButton(title: "扫描遥控器", target: self, action: #selector(toggleDiscovery))
+        discoveryButton = StudioTheme.button("扫描遥控器", target: self, action: #selector(toggleDiscovery))
         pages = NSSegmentedControl(labels: ["按键映射", "连招解锁"], trackingMode: .selectOne, target: self, action: #selector(changePage))
         pages.selectedSegment = 0
         mappingView = KeyMappingView(mapping: mapping)
         unlockView = ComboUnlockView(controller: unlock, allowPermissions: { [weak self] in self?.mappingView.allowListener() })
         unlockView.isHidden = true
-        let permissionsButton = StudioButton(title: "权限设置", target: self, action: #selector(allowFn))
+        let permissionsButton = StudioTheme.button("权限设置", target: self, action: #selector(allowFn))
         let shell = StudioShell(mapping: mappingView, unlock: unlockView, remote: remotePicker, discovery: discoveryButton,
             pages: pages, connection: connection, audio: audioLabel, permission: permission,
             permissionsButton: permissionsButton, message: message)

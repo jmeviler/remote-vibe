@@ -41,7 +41,7 @@ private final class RemoteKeyButton: NSButton {
                        "↩":"arrow.uturn.backward", "语音":"mic.fill", "主页":"house", "静音":"speaker.slash",
                        "电源":"power", "信源":"rectangle.on.rectangle", "菜单":"line.3.horizontal", "＋":"plus", "−":"minus"]
         if let symbol = symbols[title] {
-            StudioTheme.symbol(symbol, in: NSRect(x: rect.midX - 9, y: rect.midY - 9, width: 18, height: 18), color: StudioTheme.ink)
+            StudioTheme.symbol(symbol, in: NSRect(x: rect.midX - 9, y: rect.midY - 9, width: 18, height: 18))
         } else {
             let attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: StudioTheme.ink]
             let size = (title as NSString).size(withAttributes: attributes)
@@ -90,12 +90,12 @@ final class KeyMappingView: StudioPage, NSTextViewDelegate, NSTextFieldDelegate 
     private let textScroll = NSScrollView()
     private let targetLabel = NSTextField(labelWithString: "")
     private let targetField = NSTextField(string: "")
-    private let chooseAppButton = StudioButton(title: "选择应用…", target: nil, action: nil)
+    private let chooseAppButton = StudioTheme.button("选择应用…")
     private let modifierLabel = NSTextField(labelWithString: "组合键（可多选）")
     private let hint = NSTextField(wrappingLabelWithString: "")
-    private let saveButton = StudioButton(title: "保存并生效", target: nil, action: nil)
-    private let resetButton = StudioButton(title: "恢复此键默认", target: nil, action: nil)
-    private let permissionButton = StudioButton(title: "允许按键控制", target: nil, action: nil)
+    private let saveButton = StudioTheme.button("保存并生效", primary: true)
+    private let resetButton = StudioTheme.button("恢复此键默认")
+    private let permissionButton = StudioTheme.button("允许按键控制")
     private let liveStatus = NSTextField(wrappingLabelWithString: "")
     private var modifierButtons: [(NSButton, CGEventFlags)] = []
     private var remoteButtons: [UInt8: RemoteKeyButton] = [:]
@@ -211,7 +211,7 @@ final class KeyMappingView: StudioPage, NSTextViewDelegate, NSTextFieldDelegate 
         help.radius = 11; help.fill = StudioTheme.canvas; help.border = nil; addSubview(help)
         hint.textColor = StudioTheme.secondary; hint.font = .systemFont(ofSize: 11)
         hint.frame = NSRect(x: 453, y: 440, width: 532, height: 53); addSubview(hint)
-        saveButton.target = self; saveButton.action = #selector(saveMappings); saveButton.primary = true
+        saveButton.target = self; saveButton.action = #selector(saveMappings)
         saveButton.frame = NSRect(x: 440, y: 511, width: 161, height: 38); addSubview(saveButton)
         resetButton.target = self; resetButton.action = #selector(resetKey)
         resetButton.toolTip = "恢复此键的单击默认值，并清除双击和长按设置"

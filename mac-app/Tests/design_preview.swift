@@ -59,11 +59,11 @@ enum DesignPreview {
             let tabs = NSSegmentedControl(labels: ["按键映射", "连招解锁"], trackingMode: .selectOne, target: nil, action: nil)
             tabs.selectedSegment = 0; tabs.isHidden = profile == .xiaomiRC003
             let shell = StudioShell(mapping: view, unlock: combo, remote: remote,
-                discovery: StudioButton(title: "扫描遥控器", target: nil, action: nil), pages: tabs,
+                discovery: StudioTheme.button("扫描遥控器"), pages: tabs,
                 connection: NSTextField(wrappingLabelWithString: "等待遥控器连接"),
                 audio: NSTextField(wrappingLabelWithString: "麦克风：Chromecast Mic 已就绪"),
                 permission: NSTextField(wrappingLabelWithString: "Fn 按键权限：已允许"),
-                permissionsButton: StudioButton(title: "权限设置", target: nil, action: nil),
+                permissionsButton: StudioTheme.button("权限设置"),
                 message: NSTextField(wrappingLabelWithString: "点击需要输入的文本框，按住遥控器语音键开始说话。"))
             let window = NSWindow(contentRect: shell.bounds, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             let scroll = StudioScrollView(frame: shell.bounds)
@@ -111,7 +111,7 @@ enum DesignPreview {
             change(voice)
             try capture(shell, name: profile.rawValue + "-voice", directory: directory)
             resize(900, height: 640)
-            let reset = controls.compactMap { $0 as? StudioButton }.first { $0.action == NSSelectorFromString("resetKey") }!
+            let reset = controls.compactMap { $0 as? NSButton }.first { $0.action == NSSelectorFromString("resetKey") }!
             precondition(!reset.isEnabled, "Voice mapping must remain read-only")
             precondition(window.makeFirstResponder(voice), "Remote buttons must accept keyboard focus")
             try capture(shell, name: profile.rawValue + "-voice-narrow", directory: directory)
@@ -120,7 +120,7 @@ enum DesignPreview {
                 view.isHidden = true; combo.isHidden = false; tabs.selectedSegment = 1
                 try capture(shell, name: "combo", directory: directory)
                 resize(900, height: 640)
-                let record = descendants(combo).compactMap { $0 as? StudioButton }.first { $0.action == NSSelectorFromString("recordPressed") }!
+                let record = descendants(combo).compactMap { $0 as? NSButton }.first { $0.action == NSSelectorFromString("recordPressed") }!
                 precondition(window.makeFirstResponder(record), "Primary buttons must accept keyboard focus")
                 try capture(shell, name: "combo-narrow", directory: directory)
                 scroll.contentView.scroll(to: NSPoint(x: 0, y: shell.bounds.height - scroll.contentSize.height))

@@ -36,17 +36,33 @@ enum StudioTheme {
         field.focusRingType = .exterior
     }
 
-    static func symbol(_ name: String, in rect: NSRect, color: NSColor, size: CGFloat = 16) {
-        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: size, weight: .medium)) else { return }
-        let tinted = NSImage(size: image.size)
-        tinted.lockFocus()
-        image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
-        color.setFill(); NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop)
-        tinted.unlockFocus()
+    static func button(_ title: String, target: AnyObject? = nil, action: Selector? = nil,
+                       primary: Bool = false, destructive: Bool = false) -> NSButton {
+        let button = NSButton(title: title, target: target, action: action)
+        button.bezelStyle = .rounded
+        button.font = .systemFont(ofSize: 12, weight: .semibold)
+        button.bezelColor = primary ? forest : paper
+        button.contentTintColor = destructive ? error : primary ? accent : ink
+        return button
+    }
+
+    // Only the fixed app symbols use this cache, all with the same size and tint.
+    private static var symbols: [String: NSImage] = [:]
+    static func symbol(_ name: String, in rect: NSRect) {
+        if symbols[name] == nil {
+            guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 16, weight: .medium)) else { return }
+            let tinted = NSImage(size: image.size)
+            tinted.lockFocus()
+            image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+            ink.setFill(); NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop)
+            tinted.unlockFocus()
+            symbols[name] = tinted
+        }
+        guard let image = symbols[name] else { return }
         let factor = min(rect.width / image.size.width, rect.height / image.size.height)
         let size = NSSize(width: image.size.width * factor, height: image.size.height * factor)
-        tinted.draw(in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
+        image.draw(in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
                               width: size.width, height: size.height), from: .zero,
                     operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
@@ -92,48 +108,6 @@ final class StudioScrollView: NSScrollView {
         guard let documentView else { return }
         let size = NSSize(width: max(1, contentSize.width), height: max(StudioShell.size.height, contentSize.height))
         if documentView.frame.size != size { documentView.setFrameSize(size) }
-    }
-}
-
-final class StudioButton: NSButton {
-    var primary = false
-    var destructive = false
-    private var hovered = false
-    private var tracking: NSTrackingArea?
-    override var acceptsFirstResponder: Bool { isEnabled }
-    override var isEnabled: Bool { didSet { needsDisplay = true } }
-    override func becomeFirstResponder() -> Bool {
-        let accepted = super.becomeFirstResponder(); needsDisplay = true; return accepted
-    }
-    override func resignFirstResponder() -> Bool {
-        let accepted = super.resignFirstResponder(); needsDisplay = true; return accepted
-    }
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let tracking { removeTrackingArea(tracking) }
-        tracking = NSTrackingArea(rect: bounds, options: [.activeInActiveApp, .mouseEnteredAndExited, .inVisibleRect], owner: self)
-        addTrackingArea(tracking!)
-    }
-    override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
-    override func draw(_ dirtyRect: NSRect) {
-        let rect = bounds.insetBy(dx: 2, dy: 2)
-        let shape = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
-        let base = primary ? StudioTheme.ink : StudioTheme.paper
-        let fill = !isEnabled ? StudioTheme.color(0xE8EBE3) : isHighlighted ? StudioTheme.forest :
-            hovered ? (primary ? StudioTheme.forest : StudioTheme.color(0xEBF0E3)) : base
-        fill.setFill(); shape.fill()
-        if !primary { StudioTheme.line.setStroke(); shape.stroke() }
-        let textColor = !isEnabled ? StudioTheme.color(0x7D877D) : primary || isHighlighted ? StudioTheme.accent :
-            destructive ? StudioTheme.error : StudioTheme.ink
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: textColor]
-        let size = (title as NSString).size(withAttributes: attributes)
-        (title as NSString).draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attributes)
-        if window?.firstResponder === self {
-            NSColor.keyboardFocusIndicatorColor.setStroke()
-            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
-            ring.lineWidth = 2; ring.stroke()
-        }
     }
 }
 
@@ -205,7 +179,7 @@ final class ActionPreview: StudioPanel {
             }
             let disc = NSBezierPath(roundedRect: NSRect(x: 18, y: 27, width: 53, height: 53), xRadius: 16, yRadius: 16)
             StudioTheme.accent.setFill(); disc.fill()
-            StudioTheme.symbol(symbol, in: NSRect(x: 33, y: 42, width: 23, height: 23), color: StudioTheme.ink)
+            StudioTheme.symbol(symbol, in: NSRect(x: 33, y: 42, width: 23, height: 23))
             text(title, at: NSPoint(x: 88, y: 32), size: 17, color: StudioTheme.ink)
             text(detail, at: NSPoint(x: 88, y: 66), size: 11, color: StudioTheme.secondary)
         }

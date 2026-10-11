@@ -1,9 +1,13 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h}"
+[[ -z "$(git status --porcelain)" ]] || { print -u2 'Commit changes before packaging so bundled source matches the build.'; exit 1; }
 app='build/Remote Vibe.app'
 driver='build/RemoteVibeMic.driver'
 [[ -d "$app" && -d "$driver" ]] || { print -u2 '请先构建 App 和语音组件。'; exit 1; }
+[[ "$(cat "$app/Contents/Resources/Source-Commit.txt")" == "$(git rev-parse HEAD)" ]] || { print -u2 'Rebuild the app after committing, then package again.'; exit 1; }
+cmp Driver/RemoteVibeMic.c "$driver/Contents/Resources/Driver/RemoteVibeMic.c"
+cmp Scripts/build-driver.sh "$driver/Contents/Resources/Scripts/build-driver.sh"
 /usr/bin/codesign --verify --deep --strict "$app"
 /usr/bin/codesign --verify --deep --strict "$driver"
 version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")
@@ -17,6 +21,7 @@ cp Installer/preinstall Installer/postinstall "$stage/install-scripts/"
 cp Installer/uninstall "$stage/uninstall-scripts/preinstall"
 chmod 755 "$stage/install-scripts/"* "$stage/uninstall-scripts/preinstall"
 cp Installer/开始使用.txt "$share/0-开始使用.txt"
+cp Installer/Getting-Started.txt "$share/Getting-Started.txt"
 cp LICENSE Docs/THIRD_PARTY_NOTICES.md "$share/源码与许可证/"
 git archive --format=zip HEAD -o "$share/源码与许可证/remote-vibe-source.zip"
 git rev-parse HEAD > "$share/源码与许可证/源代码版本.txt"
@@ -54,7 +59,7 @@ PY
 (cd "$share" && /usr/bin/shasum -a 256 *.pkg > SHA256.txt)
 mkdir -p build/share
 archive="$PWD/build/share/$name.zip"
-if [[ -e "$archive" ]]; then archive="$PWD/build/share/$name-$(date +%Y%m%d-%H%M%S).zip"; fi
+[[ ! -e "$archive" ]] || { print -u2 "Already exists: $archive"; exit 1; }
 python3 - "$share" "$archive" <<'PY'
 from pathlib import Path
 import sys, zipfile
@@ -67,3 +72,15 @@ with zipfile.ZipFile(sys.argv[2], 'x', compression=zipfile.ZIP_DEFLATED) as arch
 PY
 print "Share archive: $archive"
 print "Staging directory: $stage"
+
+# App-only updates preserve the installed audio driver and avoid restarting audio.
+update="$stage/app-update"
+mkdir -p "$update"
+/usr/bin/ditto "$app" "$update/Remote Vibe.app"
+cp Installer/Update-README.txt "$update/Update-README.txt"
+git rev-parse HEAD > "$update/Source-Commit.txt"
+update_archive="$PWD/build/share/Remote-Vibe-$version-App-AppleSilicon.zip"
+[[ ! -e "$update_archive" ]] || { print -u2 "Already exists: $update_archive"; exit 1; }
+/usr/bin/ditto -c -k "$update" "$update_archive"
+(cd build/share && /usr/bin/shasum -a 256 "${archive:t}" "${update_archive:t}" > SHA256SUMS.txt)
+print "App update archive: $update_archive"

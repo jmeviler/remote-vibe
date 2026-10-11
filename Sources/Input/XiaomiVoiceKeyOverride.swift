@@ -18,7 +18,7 @@ final class XiaomiVoiceKeyOverride {
     private let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
     private var snapshots: [UInt64: Snapshot] = [:]
     private(set) var ready = false
-    private(set) var status = "等待小米语音连接"
+    private(set) var status = L("等待小米语音连接")
 
     static func restoring(_ current: Mappings, original: Mappings) -> Mappings {
         // If another tool changed F5 after us, its value belongs to that tool.
@@ -52,7 +52,7 @@ final class XiaomiVoiceKeyOverride {
         }
         snapshots = snapshots.filter { present.contains($0.key) }
         ready = applied
-        status = applied ? "小米语音键已就绪" : "小米语音键未接管，请退出其他映射工具后重连"
+        status = applied ? L("小米语音键已就绪") : L("小米语音键未接管，请退出其他映射工具后重连")
     }
 
     func stop() {
@@ -63,6 +63,6 @@ final class XiaomiVoiceKeyOverride {
         }
         snapshots.removeAll()
         ready = false
-        status = "等待小米语音连接"
+        status = L("等待小米语音连接")
     }
 }

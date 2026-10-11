@@ -31,7 +31,7 @@ final class DesktopActions {
     func perform(nextDisplay: Bool, allowed: @escaping () -> Bool, completion: @escaping (String) -> Void) {
         guard !busy, allowed(), AXIsProcessTrusted() else { return }
         let screens = Self.screens()
-        guard !screens.isEmpty else { completion("没有可用的显示器"); return }
+        guard !screens.isEmpty else { completion(L("没有可用的显示器")); return }
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let pids = Set(NSWorkspace.shared.runningApplications.filter {
             $0.activationPolicy == .regular && !$0.isHidden
@@ -126,7 +126,7 @@ final class DesktopActions {
             ?? screens.first { $0.bounds.contains(pointer) } ?? screens[0]
         let destination: Screen
         if nextDisplay {
-            guard screens.count > 1 else { throw SelectionError.unavailable("只有一块显示器，无需切换") }
+            guard screens.count > 1 else { throw SelectionError.unavailable(L("只有一块显示器，无需切换")) }
             destination = screens[(screens.firstIndex(of: current)! + 1) % screens.count]
         } else { destination = current }
 
@@ -168,12 +168,12 @@ final class DesktopActions {
             }
         }
         guard ProcessInfo.processInfo.systemUptime < deadline else {
-            throw SelectionError.unavailable("读取窗口超时，请重试")
+            throw SelectionError.unavailable(L("读取窗口超时，请重试"))
         }
         let zOrder = rows.compactMap { ($0[kCGWindowNumber as String] as? NSNumber)?.uint32Value }
         windows.sort { (zOrder.firstIndex(of: $0.id) ?? 0) < (zOrder.firstIndex(of: $1.id) ?? 0) }
         guard !windows.isEmpty else {
-            throw SelectionError.unavailable(nextDisplay ? "目标屏幕没有可切换的窗口" : "当前屏幕没有可切换的窗口")
+            throw SelectionError.unavailable(nextDisplay ? L("目标屏幕没有可切换的窗口") : L("当前屏幕没有可切换的窗口"))
         }
         order = order.filter { id, _ in screens.contains { $0.id == id } }
         let ids = windows.map { $0.id }
@@ -183,7 +183,7 @@ final class DesktopActions {
         let target: Window
         if nextDisplay { target = windows[0] }
         else {
-            guard ring.count > 1 else { throw SelectionError.unavailable("当前屏幕只有一个可切换的窗口") }
+            guard ring.count > 1 else { throw SelectionError.unavailable(L("当前屏幕只有一个可切换的窗口")) }
             let focused = windows.first { window in window.pid == front && origin.map { CFEqual($0, window.element) } == true }
             let index = focused.flatMap { ring.firstIndex(of: $0.id) }.map { ($0 + 1) % ring.count } ?? 0
             target = windows.first { $0.id == ring[index] }!
@@ -201,23 +201,23 @@ final class DesktopActions {
             return Self.sameBounds(bounds, target.bounds)
         }), let app = NSRunningApplication(processIdentifier: target.pid), !app.isHidden,
         AXUIElementPerformAction(target.element, kAXRaiseAction as CFString) == .success else {
-            busy = false; completion("窗口已变化或无法激活，请重试"); return
+            busy = false; completion(L("窗口已变化或无法激活，请重试")); return
         }
         // Raising alone does not select a background application's intended window.
         _ = AXUIElementSetAttributeValue(target.element, kAXMainAttribute as CFString, kCFBooleanTrue)
         guard app.activate(options: []) else {
-            busy = false; completion("窗口未能激活，请重试"); return
+            busy = false; completion(L("窗口未能激活，请重试")); return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [self] in
             defer { busy = false }
             guard token == generation, allowed(), Self.screens().contains(selection.screen) else { return }
             guard NSWorkspace.shared.frontmostApplication?.processIdentifier == target.pid,
                   let focused = Self.focusedWindow(target.pid), CFEqual(focused, target.element) else {
-                completion("窗口未获得焦点，请重试"); return
+                completion(L("窗口未获得焦点，请重试")); return
             }
             let area = target.bounds.intersection(selection.screen.bounds)
             CGWarpMouseCursorPosition(CGPoint(x: area.midX, y: area.midY))
-            completion("已切换窗口")
+            completion(L("已切换窗口"))
         }
     }
 }

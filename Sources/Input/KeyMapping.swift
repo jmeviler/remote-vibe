@@ -8,37 +8,46 @@ struct MappingKey {
     let name: String
     let usage: UInt64
     let code: CGKeyCode
-    static let all: [MappingKey] = [
-        .init(name: "Fn", usage: fnUsage, code: 63),
-        .init(name: "Enter 回车", usage: 0x28, code: 36), .init(name: "Backspace 退格删除", usage: 0x2A, code: 51),
-        .init(name: "Escape 取消", usage: 0x29, code: 53), .init(name: "Tab", usage: 0x2B, code: 48),
-        .init(name: "Space 空格", usage: 0x2C, code: 49),
-        .init(name: "↑ 上", usage: 0x52, code: 126), .init(name: "↓ 下", usage: 0x51, code: 125),
-        .init(name: "← 左", usage: 0x50, code: 123), .init(name: "→ 右", usage: 0x4F, code: 124),
-        .init(name: "Delete 向后删除", usage: 0x4C, code: 117),
-        .init(name: "Home", usage: 0x4A, code: 115), .init(name: "End", usage: 0x4D, code: 119),
-        .init(name: "Page Up", usage: 0x4B, code: 116), .init(name: "Page Down", usage: 0x4E, code: 121)
-    ] + zip(Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), [0,11,8,2,14,3,5,4,34,38,40,37,46,45,31,35,12,15,1,17,32,9,13,7,16,6])
-        .enumerated().map { .init(name: String($0.element.0), usage: UInt64(4 + $0.offset), code: CGKeyCode($0.element.1)) }
-      + zip(Array("1234567890"), [18,19,20,21,23,22,26,28,25,29])
-        .enumerated().map { .init(name: String($0.element.0), usage: UInt64(0x1E + $0.offset), code: CGKeyCode($0.element.1)) }
-      + [122,120,99,118,96,97,98,100,101,109,103,111].enumerated()
-        .map { .init(name: "F\($0.offset + 1)", usage: UInt64(0x3A + $0.offset), code: CGKeyCode($0.element)) }
-      + [105,107,113,106,64,79,80,90].enumerated()
-        .map { .init(name: "F\($0.offset + 13)", usage: UInt64(0x68 + $0.offset), code: CGKeyCode($0.element)) }
-      + [.init(name: "[", usage: 0x2F, code: 33), .init(name: "]", usage: 0x30, code: 30),
-         .init(name: "/", usage: 0x38, code: 44), .init(name: "-", usage: 0x2D, code: 27),
-         .init(name: "=", usage: 0x2E, code: 24), .init(name: ".", usage: 0x37, code: 47),
-         .init(name: ",", usage: 0x36, code: 43), .init(name: ";", usage: 0x33, code: 41),
-         .init(name: "`", usage: 0x35, code: 50), .init(name: "'", usage: 0x34, code: 39),
-         .init(name: "\\", usage: 0x31, code: 42)]
-      + [83,84,85,86,87,88,89,91,92].enumerated()
-        .map { .init(name: "小键盘 \($0.offset + 1)", usage: UInt64(0x59 + $0.offset), code: CGKeyCode($0.element)) }
-      + [.init(name: "小键盘 0", usage: 0x62, code: 82), .init(name: "小键盘 .", usage: 0x63, code: 65),
-         .init(name: "小键盘 Enter", usage: 0x58, code: 76), .init(name: "小键盘 +", usage: 0x57, code: 69),
-         .init(name: "小键盘 −", usage: 0x56, code: 78), .init(name: "小键盘 ×", usage: 0x55, code: 67),
-         .init(name: "小键盘 ÷", usage: 0x54, code: 75), .init(name: "小键盘 =", usage: 0x67, code: 81),
-         .init(name: "小键盘 Clear", usage: 0x53, code: 71)]
+    static let all: [MappingKey] = { () -> [MappingKey] in
+        var keys: [MappingKey] = [
+            MappingKey(name: "Fn", usage: fnUsage, code: 63),
+            MappingKey(name: L("Enter 回车"), usage: 0x28, code: 36), MappingKey(name: L("Backspace 退格删除"), usage: 0x2A, code: 51),
+            MappingKey(name: L("Escape 取消"), usage: 0x29, code: 53), MappingKey(name: "Tab", usage: 0x2B, code: 48),
+            MappingKey(name: L("Space 空格"), usage: 0x2C, code: 49),
+            MappingKey(name: L("↑ 上"), usage: 0x52, code: 126), MappingKey(name: L("↓ 下"), usage: 0x51, code: 125),
+            MappingKey(name: L("← 左"), usage: 0x50, code: 123), MappingKey(name: L("→ 右"), usage: 0x4F, code: 124),
+            MappingKey(name: L("Delete 向后删除"), usage: 0x4C, code: 117),
+            MappingKey(name: "Home", usage: 0x4A, code: 115), MappingKey(name: "End", usage: 0x4D, code: 119),
+            MappingKey(name: "Page Up", usage: 0x4B, code: 116), MappingKey(name: "Page Down", usage: 0x4E, code: 121)
+        ]
+        for (index, pair) in zip(Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), [0,11,8,2,14,3,5,4,34,38,40,37,46,45,31,35,12,15,1,17,32,9,13,7,16,6] as [CGKeyCode]).enumerated() {
+            keys.append(MappingKey(name: String(pair.0), usage: UInt64(4 + index), code: pair.1))
+        }
+        for (index, pair) in zip(Array("1234567890"), [18,19,20,21,23,22,26,28,25,29] as [CGKeyCode]).enumerated() {
+            keys.append(MappingKey(name: String(pair.0), usage: UInt64(0x1E + index), code: pair.1))
+        }
+        for (index, code) in ([122,120,99,118,96,97,98,100,101,109,103,111] as [CGKeyCode]).enumerated() {
+            keys.append(MappingKey(name: "F\(index + 1)", usage: UInt64(0x3A + index), code: code))
+        }
+        for (index, code) in ([105,107,113,106,64,79,80,90] as [CGKeyCode]).enumerated() {
+            keys.append(MappingKey(name: "F\(index + 13)", usage: UInt64(0x68 + index), code: code))
+        }
+        keys += [MappingKey(name: "[", usage: 0x2F, code: 33), MappingKey(name: "]", usage: 0x30, code: 30),
+            MappingKey(name: "/", usage: 0x38, code: 44), MappingKey(name: "-", usage: 0x2D, code: 27),
+            MappingKey(name: "=", usage: 0x2E, code: 24), MappingKey(name: ".", usage: 0x37, code: 47),
+            MappingKey(name: ",", usage: 0x36, code: 43), MappingKey(name: ";", usage: 0x33, code: 41),
+            MappingKey(name: "`", usage: 0x35, code: 50), MappingKey(name: "'", usage: 0x34, code: 39),
+            MappingKey(name: "\\", usage: 0x31, code: 42)]
+        for (index, code) in ([83,84,85,86,87,88,89,91,92] as [CGKeyCode]).enumerated() {
+            keys.append(MappingKey(name: L("小键盘 %@", String(index + 1)), usage: UInt64(0x59 + index), code: code))
+        }
+        keys += [MappingKey(name: L("小键盘 0"), usage: 0x62, code: 82), MappingKey(name: L("小键盘 ."), usage: 0x63, code: 65),
+            MappingKey(name: L("小键盘 Enter"), usage: 0x58, code: 76), MappingKey(name: L("小键盘 +"), usage: 0x57, code: 69),
+            MappingKey(name: L("小键盘 −"), usage: 0x56, code: 78), MappingKey(name: L("小键盘 ×"), usage: 0x55, code: 67),
+            MappingKey(name: L("小键盘 ÷"), usage: 0x54, code: 75), MappingKey(name: L("小键盘 ="), usage: 0x67, code: 81),
+            MappingKey(name: L("小键盘 Clear"), usage: 0x53, code: 71)]
+        return keys
+    }()
 }
 
 struct ButtonAction: Codable, Equatable {
@@ -68,11 +77,11 @@ struct ButtonAction: Codable, Equatable {
         return kind != .key || (key != nil && modifiers & ~allowed == 0 && (!isFn || modifiers == 0))
     }
     var configurationError: String? {
-        if !isValid { return "按键动作无效，请重新选择。" }
+        if !isValid { return L("按键动作无效，请重新选择。") }
         if kind == .openApp && !(appPath?.hasPrefix("/") == true && (appPath! as NSString).pathExtension.lowercased() == "app") {
-            return "请先选择要打开的应用。"
+            return L("请先选择要打开的应用。")
         }
-        if kind == .openURL && webpageURL == nil { return "请输入完整的 http:// 或 https:// 网页地址。" }
+        if kind == .openURL && webpageURL == nil { return L("请输入完整的 http:// 或 https:// 网页地址。") }
         return nil
     }
     var webpageURL: URL? {
@@ -82,25 +91,25 @@ struct ButtonAction: Codable, Equatable {
     }
     var title: String {
         switch kind {
-        case .remoteVoice: return "遥控器语音（按住说话）"
-        case .original: return "原按键功能"
-        case .disabled: return "不执行"
-        case .scrollUp: return "向上滚动"
-        case .scrollDown: return "向下滚动"
-        case .scrollLeft: return "向左滚动"
-        case .scrollRight: return "向右滚动"
-        case .nextDisplay: return "切换屏幕"
-        case .nextWindow: return "切换当前屏幕窗口"
-        case .text: return "输入常用文本"
-        case .systemKey: return SystemControl(rawValue: usage)?.title ?? "系统按键"
-        case .openApp: return appPath.map { "打开 \(($0 as NSString).lastPathComponent)" } ?? "打开指定应用"
-        case .openURL: return "打开指定网页"
+        case .remoteVoice: return L("遥控器麦克风（按住说话）")
+        case .original: return L("原按键功能")
+        case .disabled: return L("不执行")
+        case .scrollUp: return L("向上滚动")
+        case .scrollDown: return L("向下滚动")
+        case .scrollLeft: return L("向左滚动")
+        case .scrollRight: return L("向右滚动")
+        case .nextDisplay: return L("切换屏幕")
+        case .nextWindow: return L("切换当前屏幕窗口")
+        case .text: return L("输入常用文本")
+        case .systemKey: return SystemControl(rawValue: usage)?.title ?? L("系统按键")
+        case .openApp: return appPath.map { L("打开 %@", ($0 as NSString).lastPathComponent) } ?? L("打开指定应用")
+        case .openURL: return L("打开指定网页")
         case .key:
-            if isFn { return "Fn（按住 / 松开）" }
+            if isFn { return L("Fn 按键（按住 / 松开）") }
             let flags = CGEventFlags(rawValue: modifiers)
             let prefix = [(CGEventFlags.maskControl, "⌃"), (.maskAlternate, "⌥"), (.maskShift, "⇧"), (.maskCommand, "⌘"), (.maskSecondaryFn, "Fn + ")]
                 .filter { flags.contains($0.0) }.map { $0.1 }.joined()
-            return prefix + (key?.name ?? "Enter 回车")
+            return prefix + (key?.name ?? L("Enter 回车"))
         }
     }
 }
@@ -151,18 +160,18 @@ struct ButtonBinding: Codable, Equatable {
     var usesListener: Bool { hasGestures || singleClick.usesListener }
     var validationMessage: String? {
         if let error = [singleClick, doubleClick, longPress].compactMap({ $0?.configurationError }).first { return error }
-        if hasGestures && singleClick.kind == .original { return "使用双击或长按前，请为单击选择明确动作（也可选“不执行”）。" }
-        if hasGestures && singleClick.isFn { return "单击 Fn 需要按下即保持；请将 Fn 放到长按，或取消双击和长按。" }
-        if hasGestures && singleClick.kind == .remoteVoice { return "单击遥控器语音需要按下即开麦；请将语音放到长按，或取消双击和长按。" }
-        if doubleClick?.kind == .remoteVoice { return "双击不支持按住说话；请将遥控器语音放到长按。" }
-        if doubleClick?.isFn == true { return "双击不支持保持 Fn；请将 Fn 放到长按。" }
-        if doubleClick?.kind == .original || longPress?.kind == .original { return "双击和长按需要选择明确动作。" }
+        if hasGestures && singleClick.kind == .original { return L("使用双击或长按前，请为单击选择明确动作（也可选“不执行”）。") }
+        if hasGestures && singleClick.isFn { return L("单击 Fn 需要按下即保持；请将 Fn 放到长按，或取消双击和长按。") }
+        if hasGestures && singleClick.kind == .remoteVoice { return L("单击遥控器语音需要按下即开麦；请将语音放到长按，或取消双击和长按。") }
+        if doubleClick?.kind == .remoteVoice { return L("双击不支持按住说话；请将遥控器语音放到长按。") }
+        if doubleClick?.isFn == true { return L("双击不支持保持 Fn；请将 Fn 放到长按。") }
+        if doubleClick?.kind == .original || longPress?.kind == .original { return L("双击和长按需要选择明确动作。") }
         return nil
     }
     func validationMessage(for profile: RemoteProfile) -> String? {
         if let validationMessage { return validationMessage }
         if profile != .chromecast && [singleClick, doubleClick, longPress].contains(where: { $0?.kind == .remoteVoice }) {
-            return "普通键开麦目前仅支持 Google；小米请使用原语音键。"
+            return L("普通键开麦目前仅支持 Google；小米请使用原语音键。")
         }
         return nil
     }
@@ -187,28 +196,28 @@ struct MappedButton {
     }
     // Report-array indices and consumer usages from this remote's HID descriptor.
     static let chromecast: [MappedButton] = [
-        .init(code: 3, name: "方向上", usage: 0x42), .init(code: 4, name: "方向下", usage: 0x43),
-        .init(code: 5, name: "方向左", usage: 0x44), .init(code: 6, name: "方向右", usage: 0x45),
-        .init(code: 7, name: "中央确认", usage: 0x41), .init(code: 11, name: "返回箭头", usage: 0x224),
-        .init(code: 10, name: "主页", usage: 0x223), .init(code: 8, name: "静音", usage: 0xE2),
+        .init(code: 3, name: L("方向上"), usage: 0x42), .init(code: 4, name: L("方向下"), usage: 0x43),
+        .init(code: 5, name: L("方向左"), usage: 0x44), .init(code: 6, name: L("方向右"), usage: 0x45),
+        .init(code: 7, name: L("中央确认"), usage: 0x41), .init(code: 11, name: L("返回箭头"), usage: 0x224),
+        .init(code: 10, name: L("主页"), usage: 0x223), .init(code: 8, name: L("静音"), usage: 0xE2),
         .init(code: 14, name: "YouTube", usage: 0x77), .init(code: 15, name: "Netflix", usage: 0x78),
-        .init(code: 1, name: "电源", usage: 0x19E), .init(code: 17, name: "信源", usage: 0x89),
-        .init(code: 12, name: "音量＋", usage: 0xE9), .init(code: 13, name: "音量－", usage: 0xEA)
+        .init(code: 1, name: L("电源"), usage: 0x19E), .init(code: 17, name: L("信源"), usage: 0x89),
+        .init(code: 12, name: L("音量＋"), usage: 0xE9), .init(code: 13, name: L("音量－"), usage: 0xEA)
     ]
 
     static let xiaomi: [MappedButton] = [
-        .init(code: 3, name: "方向上", usage: 0x52, page: 7, defaultBinding: .init(kind: .original)),
-        .init(code: 4, name: "方向下", usage: 0x51, page: 7, defaultBinding: .init(kind: .original)),
-        .init(code: 5, name: "方向左", usage: 0x50, page: 7, defaultBinding: .init(kind: .original)),
-        .init(code: 6, name: "方向右", usage: 0x4F, page: 7, defaultBinding: .init(kind: .original)),
-        .init(code: 7, name: "中央确认", usage: 0x28, page: 7, defaultBinding: .init(kind: .key, usage: 0x28)),
-        .init(code: 11, name: "返回", usage: 0xF1, page: 7, defaultBinding: .init(kind: .key, usage: 0x2A)),
-        .init(code: 10, name: "主页", usage: 0x4A, page: 7, defaultBinding: .init(kind: .original)),
-        .init(code: 12, name: "音量＋", usage: 0x80, page: 7, defaultBinding: .init(kind: .original)),
-        .init(code: 13, name: "音量－", usage: 0x81, page: 7, defaultBinding: .init(kind: .original)),
-        .init(code: 18, name: "菜单", usage: 0x65, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 3, name: L("方向上"), usage: 0x52, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 4, name: L("方向下"), usage: 0x51, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 5, name: L("方向左"), usage: 0x50, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 6, name: L("方向右"), usage: 0x4F, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 7, name: L("中央确认"), usage: 0x28, page: 7, defaultBinding: .init(kind: .key, usage: 0x28)),
+        .init(code: 11, name: L("返回"), usage: 0xF1, page: 7, defaultBinding: .init(kind: .key, usage: 0x2A)),
+        .init(code: 10, name: L("主页"), usage: 0x4A, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 12, name: L("音量＋"), usage: 0x80, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 13, name: L("音量－"), usage: 0x81, page: 7, defaultBinding: .init(kind: .original)),
+        .init(code: 18, name: L("菜单"), usage: 0x65, page: 7, defaultBinding: .init(kind: .original)),
         .init(code: 19, name: "TV", usage: 0x35, page: 7, defaultBinding: .init(kind: .original)),
-        .init(code: 1, name: "电源", usage: 0x66, page: 7, defaultBinding: .init(kind: .original))
+        .init(code: 1, name: L("电源"), usage: 0x66, page: 7, defaultBinding: .init(kind: .original))
     ]
 
     static func buttons(for profile: RemoteProfile) -> [MappedButton] { profile == .chromecast ? chromecast : xiaomi }
@@ -276,7 +285,7 @@ final class KeyMapping {
     private(set) var bindings: Bindings
     private(set) var profile: RemoteProfile
     var buttons: [MappedButton] { MappedButton.buttons(for: profile) }
-    private(set) var status = "等待遥控器连接"
+    private(set) var status = L("等待遥控器连接")
     private(set) var connected = false
     private(set) var needsApply = false
     private var listenerOK = false
@@ -411,9 +420,9 @@ final class KeyMapping {
         if !fnButtons.isSubset(of: activeShortcuts) { releaseMappedFn() }
         if let voiceButton, !activeShortcuts.contains(voiceButton) { releaseMappedVoice(normal: false) }
         snapshots = snapshots.filter { present.contains($0.key) }
-        status = !connected ? "设置已保存 · 等待遥控器连接" : !applied ? "按键设置未能生效，请检查权限" :
-            needsApply ? "按键设置被其他程序更改 · 保存可重新应用" :
-            needsListener && !listenerOK ? "自定义动作需要输入监控及辅助功能权限" : "按键已生效 · 重连后自动恢复"
+        status = !connected ? L("设置已保存 · 等待遥控器连接") : !applied ? L("按键设置未能生效，请检查权限") :
+            needsApply ? L("按键设置被其他程序更改 · 保存可重新应用") :
+            needsListener && !listenerOK ? L("自定义动作需要输入监控及辅助功能权限") : L("按键已生效 · 重连后自动恢复")
         if connected && applied && !needsApply && (!needsListener || listenerOK),
            let feedback = actionFeedback, feedback.until > Date() { status = feedback.text }
         if disconnected { onInputReset?() }
@@ -541,7 +550,7 @@ final class KeyMapping {
                     releaseMappedFn()
                     releaseMappedVoice(normal: false)
                     needsApply = true
-                    status = "按键设置已变化，本次手势已取消 · 保存可重新应用"
+                    status = L("按键设置已变化，本次手势已取消 · 保存可重新应用")
                     return
                 }
                 // A delayed long-press callback must never start a hold after release.
@@ -558,12 +567,12 @@ final class KeyMapping {
             voiceButton = button
             if !onVoicePress() {
                 voiceButton = nil
-                feedback("语音未启动，请检查 Google 连接、权限或等待上一段结束")
+                feedback(L("语音未启动，请检查 Google 连接、权限或等待上一段结束"))
             }
         } else if value.isFn {
             let wasHeld = mappedFn.held
             guard mappedFn.down() else {
-                status = "Fn 已被按住或没有权限，本次未接管"
+                status = L("Fn 已被按住或没有权限，本次未接管")
                 return
             }
             fnButtons.insert(button)
@@ -596,7 +605,7 @@ final class KeyMapping {
             }
         } else if value.kind == .openApp {
             guard let path = value.appPath, let url = Self.applicationURL(path) else {
-                feedback("找不到所选应用，请重新选择应用并保存"); return
+                feedback(L("找不到所选应用，请重新选择应用并保存")); return
             }
             let generation = actionGeneration
             let configuration = NSWorkspace.OpenConfiguration()
@@ -604,11 +613,11 @@ final class KeyMapping {
             NSWorkspace.shared.openApplication(at: url, configuration: configuration) { [weak self] _, error in
                 DispatchQueue.main.async {
                     guard let self, self.actionGeneration == generation else { return }
-                    self.feedback(error == nil ? "已打开 \(url.deletingPathExtension().lastPathComponent)" : "无法打开所选应用，请检查应用是否可正常启动")
+                    self.feedback(error == nil ? L("已打开 %@", url.deletingPathExtension().lastPathComponent) : L("无法打开所选应用，请检查应用是否可正常启动"))
                 }
             }
         } else if value.kind == .openURL, let url = value.webpageURL {
-            feedback(NSWorkspace.shared.open(url) ? "已交给默认浏览器打开" : "无法打开网页，请检查默认浏览器")
+            feedback(NSWorkspace.shared.open(url) ? L("已交给默认浏览器打开") : L("无法打开网页，请检查默认浏览器"))
         } else if value.kind == .key,
                   let events = Self.keyEvents(value, currentFlags: CGEventSource.flagsState(.combinedSessionState)) {
             for event in events {
@@ -710,6 +719,6 @@ final class KeyMapping {
         }
         snapshots.removeAll()
         connected = false
-        status = "按键映射已停止"
+        status = L("按键映射已停止")
     }
 }

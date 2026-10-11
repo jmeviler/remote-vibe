@@ -4,7 +4,7 @@ enum RemoteProfile: String, CaseIterable {
     case chromecast
     case xiaomiRC003
 
-    var title: String { self == .chromecast ? "Google" : "小米 RC003" }
+    var title: String { self == .chromecast ? "Google" : L("小米 RC003") }
     var vendorID: Int { self == .chromecast ? 0x18D1 : 0x2717 }
     var productID: Int { self == .chromecast ? 0x9450 : 0x32B8 }
     var mappingKey: String { self == .chromecast ? "keyMappings.v1" : "keyMappings.xiaomiRC003.v1" }

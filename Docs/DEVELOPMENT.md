@@ -30,7 +30,7 @@ zsh Scripts/build-driver.sh
 zsh Scripts/package.sh
 ```
 
-输出位于 `build/share/`，包含安装包、卸载包、首次使用说明、源码、版本记录及许可证。打包不执行安装。
+输出位于 `build/share/`，包含完整安装 ZIP、独立 App 更新 ZIP 和校验文件。打包不执行安装。发布步骤见 [发布与更新](RELEASING.md)。
 
 ## 实现
 
@@ -61,7 +61,7 @@ zsh Scripts/package.sh
 
 回退到旧版时应同时恢复该版本的配置快照：旧版不认识新增动作类型。可用 `defaults export local.ben.RemoteVibe 路径.plist` 备份偏好，在退出 App 后用 `defaults import local.ben.RemoteVibe 路径.plist` 恢复，再运行对应旧构建。
 
-0.4.1 新增 Google **遥控器语音** 动作，可将普通键设为按下即开麦或长按后开麦，松开结束。Fn 映射的用途不变；小米继续使用原语音键。设置方法见安装与使用说明，验证边界见 [GOOGLE-VOICE-VALIDATION.md](GOOGLE-VOICE-VALIDATION.md)。运行 `zsh Tests/test-remote-voice.sh` 验证语音会话和两种型号的原语音路径。
+0.4.1 新增 Google **遥控器麦克风** 动作，可将普通键设为按下即开麦或长按后开麦，松开结束。Fn 映射的用途不变；小米继续使用原语音键。设置方法见安装与使用说明，验证边界见 [GOOGLE-VOICE-VALIDATION.md](GOOGLE-VOICE-VALIDATION.md)。运行 `zsh Tests/test-remote-voice.sh` 验证语音会话和两种型号的原语音路径。
 
 ## 目录与命名调整
 
@@ -84,3 +84,11 @@ zsh Scripts/package.sh
 设置页内部的 `StudioTheme`、`StudioPanel`、`StudioPage`、`StudioScrollView`、`StudioShell` 分别改为 `SettingsTheme`、`SettingsPanel`、`SettingsPage`、`SettingsScrollView`、`SettingsView`。
 
 运行行为与配置格式保持一致：沿用已有偏好键、JSON 字段、钥匙串服务、Bundle ID、设备 UID 和 `Chromecast Mic` 显示名；现有 Google / 小米配置无需迁移。驱动随包保留源码、构建脚本和许可证，源码归档仍使用当前 Git 提交。
+
+## 0.4.3：语言、终端操作与更新
+
+UI 和状态文字通过 `Sources/App/Localization.swift` 读取原生 `.strings`；协议标识、偏好键、动作类型与设备名保持不变。`Tests/test-button-gestures.sh` 在中文和英文资源下运行同一组 UI 检查。预览英文：`zsh Tests/preview-design.sh english en`。
+
+`ReleaseUpdate.swift` 仅解析正式发布版本和可下载 App 包，网络请求仍由菜单按钮触发。`zsh Tests/test-app-support.sh` 验证语言资源和版本比较。
+
+Codex CLI 使用已有键盘事件路径，新增数字键和 Ctrl+C/G/O/R 预设。方向、Enter、Esc、Tab、Shift+Tab 和自定义组合键已在动作库；不自动覆盖用户键位。具体用途依赖当前终端界面与 Codex 版本，可在 Codex 的 `/keymap` 查看或修改其绑定。官方参考：[交互快捷键](https://learn.chatgpt.com/docs/developer-commands?surface=cli#interactive-shortcuts)。

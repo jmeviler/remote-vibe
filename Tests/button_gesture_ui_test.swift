@@ -7,10 +7,11 @@ enum ButtonGestureUITest {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         let empty = try JSONEncoder().encode(KeyMapping.Bindings())
-        UserDefaults.standard.setVolatileDomain(Dictionary(uniqueKeysWithValues:
-            RemoteProfile.allCases.map { ($0.mappingKey, empty) }), forName: UserDefaults.argumentDomain)
+        var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        for profile in RemoteProfile.allCases { arguments[profile.mappingKey] = empty }
+        UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
         for profile in RemoteProfile.allCases { try check(profile) }
-        print("PASS: both settings layouts, per-trigger drafts, text, Fn, validation, reset and fixed voice button (no HID or preference writes).")
+        print("PASS [\(Bundle.main.preferredLocalizations.joined(separator: ","))]: both settings layouts, per-trigger drafts, text, Fn, validation, reset and fixed voice button (no HID or preference writes).")
     }
 
     private static func descendants(_ view: NSView) -> [NSView] {
@@ -29,8 +30,8 @@ enum ButtonGestureUITest {
         let trigger = all.compactMap { $0 as? NSSegmentedControl }.first!
         let action = all.compactMap { $0 as? NSPopUpButton }.first { $0.action == NSSelectorFromString("actionChanged") }!
         let editor = all.compactMap { $0 as? NSTextView }.first!
-        let save = all.compactMap { $0 as? NSButton }.first { $0.title == "保存并生效" }!
-        let reset = all.compactMap { $0 as? NSButton }.first { $0.title == "恢复此键默认" }!
+        let save = all.compactMap { $0 as? NSButton }.first { $0.title == L("保存并生效") }!
+        let reset = all.compactMap { $0 as? NSButton }.first { $0.title == L("恢复此键默认") }!
         func choose(_ title: String) {
             precondition(action.itemTitles.contains(title))
             action.selectItem(withTitle: title); change(action)
@@ -43,29 +44,29 @@ enum ButtonGestureUITest {
             change(button)
         }
         selectTrigger(1)
-        precondition(action.titleOfSelectedItem == "未设置")
-        precondition(action.itemArray.first { $0.title.hasPrefix("Fn（") }?.isEnabled == false)
-        choose("输入常用文本")
+        precondition(action.titleOfSelectedItem == L("未设置"))
+        precondition(action.itemArray.first { $0.tag == 2 && !$0.isSectionHeader }?.isEnabled == false)
+        choose(L("输入常用文本"))
         editor.string = "双击输入\nHello 🙂"
         view.textDidChange(Notification(name: NSText.didChangeNotification, object: editor))
         selectTrigger(2)
-        choose("Fn（长按后保持，松开释放）")
+        choose(L("Fn 按键（长按后保持）"))
         selectTrigger(0)
-        precondition(action.titleOfSelectedItem == "Enter 回车 / 确认")
+        precondition(action.titleOfSelectedItem == L("Enter 回车 / 确认"))
         selectTrigger(1)
-        precondition(action.titleOfSelectedItem == "输入常用文本" && editor.string == "双击输入\nHello 🙂")
+        precondition(action.titleOfSelectedItem == L("输入常用文本") && editor.string == "双击输入\nHello 🙂")
         selectButton(profile == .chromecast ? 14 : 19)
-        precondition(action.titleOfSelectedItem == "未设置")
+        precondition(action.titleOfSelectedItem == L("未设置"))
         selectButton(profile == .chromecast ? 8 : 7)
         precondition(editor.string == "双击输入\nHello 🙂")
         precondition(save.isEnabled)
 
         selectTrigger(0)
-        choose("原按键功能")
+        choose(L("原按键功能"))
         precondition(!save.isEnabled)
-        choose("Fn（按住 / 松开）")
+        choose(L("Fn 按键（按住 / 松开）"))
         precondition(!save.isEnabled)
-        choose("Enter 回车 / 确认")
+        choose(L("Enter 回车 / 确认"))
         precondition(save.isEnabled)
         selectTrigger(profile == .chromecast ? 1 : 2)
         view.layoutSubtreeIfNeeded()
@@ -84,32 +85,32 @@ enum ButtonGestureUITest {
 
         change(reset)
         selectTrigger(1)
-        precondition(action.titleOfSelectedItem == "未设置")
+        precondition(action.titleOfSelectedItem == L("未设置"))
         selectTrigger(2)
-        precondition(action.titleOfSelectedItem == "未设置")
+        precondition(action.titleOfSelectedItem == L("未设置"))
         selectTrigger(0)
-        precondition(action.titleOfSelectedItem == "Enter 回车 / 确认")
+        precondition(action.titleOfSelectedItem == L("Enter 回车 / 确认"))
         // New actions remain independent across gestures, including editable URLs.
-        choose("复制 · ⌘C")
+        choose(L("复制 · ⌘C"))
         selectTrigger(1)
-        choose("打开指定网页…")
+        choose(L("打开指定网页…"))
         let address = all.compactMap { $0 as? NSTextField }.first { $0.delegate === view }!
         precondition(address.isEditable && !address.isHidden && !save.isEnabled)
         address.stringValue = "https://example.com/search?q=hello"
         view.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: address))
         precondition(save.isEnabled)
         selectTrigger(2)
-        choose("播放 / 暂停")
+        choose(L("播放 / 暂停"))
         selectTrigger(0)
-        precondition(action.titleOfSelectedItem == "复制 · ⌘C")
+        precondition(action.titleOfSelectedItem == L("复制 · ⌘C"))
         selectTrigger(1)
-        precondition(action.titleOfSelectedItem == "打开指定网页…" && address.stringValue == "https://example.com/search?q=hello")
+        precondition(action.titleOfSelectedItem == L("打开指定网页…") && address.stringValue == "https://example.com/search?q=hello")
         address.stringValue = "javascript:alert(1)"
         view.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: address))
         precondition(!save.isEnabled)
-        choose("打开指定应用…")
+        choose(L("打开指定应用…"))
         precondition(!address.isEditable && !save.isEnabled)
-        let chooser = all.compactMap { $0 as? NSButton }.first { $0.title == "选择应用…" }!
+        let chooser = all.compactMap { $0 as? NSButton }.first { $0.title == L("选择应用…") }!
         precondition(!chooser.isHidden && chooser.isEnabled)
         change(reset)
         selectTrigger(0)
@@ -117,18 +118,18 @@ enum ButtonGestureUITest {
         let voiceItem = action.itemArray.first { $0.tag == voiceIndex && !$0.isSectionHeader }!
         precondition(voiceItem.isHidden == (profile == .xiaomiRC003))
         if profile == .chromecast {
-            choose("遥控器语音（按住说话）")
+            choose(L("遥控器麦克风（按住说话）"))
             precondition(save.isEnabled)
             selectTrigger(2)
-            choose("遥控器语音（长按后开麦）")
+            choose(L("遥控器麦克风（长按后开麦）"))
             precondition(!save.isEnabled) // immediate hold cannot also wait for gestures
             selectTrigger(0)
-            choose("Enter 回车 / 确认")
+            choose(L("Enter 回车 / 确认"))
             precondition(save.isEnabled)
             selectTrigger(1)
             precondition(!voiceItem.isEnabled)
             selectTrigger(2)
-            precondition(voiceItem.isEnabled && action.titleOfSelectedItem == "遥控器语音（长按后开麦）")
+            precondition(voiceItem.isEnabled && action.titleOfSelectedItem == L("遥控器麦克风（长按后开麦）"))
         }
         change(reset)
         selectButton(0)

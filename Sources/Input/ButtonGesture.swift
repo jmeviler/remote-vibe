@@ -5,9 +5,9 @@ enum ButtonTrigger: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .singleClick: return "单击"
-        case .doubleClick: return "双击"
-        case .longPress: return "长按"
+        case .singleClick: return L("单击")
+        case .doubleClick: return L("双击")
+        case .longPress: return L("长按")
         }
     }
 }

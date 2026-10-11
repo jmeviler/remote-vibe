@@ -63,7 +63,7 @@ final class RemoteAudioSession {
         // Only v1.0 can distinguish late host replies from a physical voice press.
         guard profile == .chromecast, ready, now() >= mappedRetryAfter else { return false }
         guard proto.capabilities?.version == .v10 else {
-            onStatus("此 Google 遥控器使用旧语音协议，请使用原语音键")
+            onStatus(L("此 Google 遥控器使用旧语音协议，请使用原语音键"))
             return false
         }
         return requestOpen(source: .mappedButton)
@@ -75,7 +75,7 @@ final class RemoteAudioSession {
         proto.prepareForAudioStream()
         after(1.5) { [weak self] in
             self?.cancel()
-            self?.onStatus("遥控器没有响应开麦，请松开后重试或使用原语音键")
+            self?.onStatus(L("遥控器没有响应开麦，请松开后重试或使用原语音键"))
         }
         send(command)
         return true
@@ -121,7 +121,7 @@ final class RemoteAudioSession {
             guard profile != .xiaomiRC003 || codec == .adpcm16k else {
                 phase = .closing(.physical, sid, normal: false)
                 awaitStop(retry: true); closeStream(sid)
-                onStatus("小米切换到不支持的音频编码")
+                onStatus(L("小米切换到不支持的音频编码"))
                 return
             }
             let owner = source ?? .physical
@@ -133,7 +133,7 @@ final class RemoteAudioSession {
             if owner == .mappedButton {
                 after(1.5) { [weak self] in
                     self?.cancel()
-                    self?.onStatus("遥控器没有传回音频，请松开后重试或使用原语音键")
+                    self?.onStatus(L("遥控器没有传回音频，请松开后重试或使用原语音键"))
                 }
             }
             scheduleKeepAlive()
@@ -153,7 +153,7 @@ final class RemoteAudioSession {
             }
         case .micOpenError:
             guard opening else { return }
-            cancel(); onStatus("遥控器暂时未能开启麦克风，请松开后重试")
+            cancel(); onStatus(L("遥控器暂时未能开启麦克风，请松开后重试"))
         case .capabilities, .unknown: break
         }
     }
@@ -183,7 +183,7 @@ final class RemoteAudioSession {
                 self.ready = false
                 self.proto.endAudioStream()
                 if began { self.onEnd(false) }
-                self.onStatus("关麦未确认，正在断开遥控器语音连接")
+                self.onStatus(L("关麦未确认，正在断开遥控器语音连接"))
                 self.onDisconnect()
             }
         }

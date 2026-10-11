@@ -63,12 +63,12 @@ final class ATVVProtocol {
 
     func acceptCapabilities(_ capabilities: ATVVCapabilities) throws {
         guard let selected = capabilities.selectedCodec else {
-            throw ATVVError.protocolFailure("遥控器不支持 ADPCM 8/16 kHz")
+            throw ATVVError.protocolFailure(L("遥控器不支持 ADPCM 8/16 kHz"))
         }
         if profile == .xiaomiRC003 {
             guard capabilities.version == .v10, selected == .adpcm16k,
                   (1...4096).contains(capabilities.frameSize) else {
-                throw ATVVError.protocolFailure("小米语音能力不匹配：需要 ATVV 1.0 / 16 kHz")
+                throw ATVVError.protocolFailure(L("小米语音能力不匹配：需要 ATVV 1.0 / 16 kHz"))
             }
         }
         self.capabilities = capabilities
@@ -82,7 +82,7 @@ final class ATVVProtocol {
 
     func micOpenCommand() throws -> Data {
         guard let capabilities, let codec else {
-            throw ATVVError.protocolFailure("尚未完成 ATVV capabilities 协商")
+            throw ATVVError.protocolFailure(L("尚未完成 ATVV capabilities 协商"))
         }
         switch capabilities.version {
         case .v04:
@@ -94,14 +94,14 @@ final class ATVVProtocol {
 
     func micCloseCommand(streamID: UInt8) throws -> Data {
         guard let capabilities else {
-            throw ATVVError.protocolFailure("尚未完成 ATVV capabilities 协商")
+            throw ATVVError.protocolFailure(L("尚未完成 ATVV capabilities 协商"))
         }
         return capabilities.version == .v04 ? Data([0x0D]) : Data([0x0D, streamID])
     }
 
     func keepAliveCommand(streamID: UInt8) throws -> Data {
         guard let capabilities else {
-            throw ATVVError.protocolFailure("尚未完成 ATVV capabilities 协商")
+            throw ATVVError.protocolFailure(L("尚未完成 ATVV capabilities 协商"))
         }
         return capabilities.version == .v04 ? try micOpenCommand() : Data([0x0E, streamID])
     }

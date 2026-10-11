@@ -160,21 +160,21 @@ final class ActionPreview: SettingsPanel {
                 (key as NSString).draw(at: NSPoint(x: x + (width - size.width) / 2, y: 16 + (49 - size.height) / 2), withAttributes: attrs)
                 x += width + 8
             }
-            text(binding.isFn ? "按住保持 · 松开释放" : "发送到当前应用", at: NSPoint(x: 18, y: 85), size: 11, color: SettingsTheme.secondary)
+            text(binding.isFn ? L("仅模拟 Fn · 使用目标软件选择的麦克风") : L("发送到当前应用"), at: NSPoint(x: 18, y: 85), size: 11, color: SettingsTheme.secondary)
         } else {
             let symbol: String
             let title: String
             let detail: String
-            if voice { symbol = "waveform"; title = "按住说话，松开结束。"; detail = "使用遥控器自带麦克风" }
-            else if binding == nil { symbol = "plus"; title = "为这个手势，留一个位置。"; detail = "从上方菜单选择一个动作" }
+            if voice { symbol = "waveform"; title = L("按住说话，松开结束。"); detail = L("使用遥控器自带麦克风") }
+            else if binding == nil { symbol = "plus"; title = L("为这个手势，留一个位置。"); detail = L("从上方菜单选择一个动作") }
             else {
                 switch binding!.kind {
-                case .disabled: symbol = "pause.circle"; title = "不执行动作"; detail = "识别这个手势，但不触发操作"
-                case .nextDisplay: symbol = "display.2"; title = "切换到下一块屏幕"; detail = "聚焦可见窗口，鼠标随之移入"
-                case .nextWindow: symbol = "macwindow.on.rectangle"; title = "在窗口之间，轻松流转。"; detail = "循环切换当前屏幕的可见窗口"
-                case .systemKey: symbol = "slider.horizontal.3"; title = binding!.title; detail = "交给系统、显示器或媒体应用响应"
-                case .scrollUp, .scrollDown, .scrollLeft, .scrollRight: symbol = "scroll"; title = binding!.title; detail = "作用于鼠标所在位置"
-                default: symbol = "arrow.turn.up.right"; title = "保留原按键功能"; detail = "继续使用系统对这个按键的默认处理"
+                case .disabled: symbol = "pause.circle"; title = L("不执行动作"); detail = L("识别这个手势，但不触发操作")
+                case .nextDisplay: symbol = "display.2"; title = L("切换到下一块屏幕"); detail = L("聚焦可见窗口，鼠标随之移入")
+                case .nextWindow: symbol = "macwindow.on.rectangle"; title = L("在窗口之间，轻松流转。"); detail = L("循环切换当前屏幕的可见窗口")
+                case .systemKey: symbol = "slider.horizontal.3"; title = binding!.title; detail = L("交给系统、显示器或媒体应用响应")
+                case .scrollUp, .scrollDown, .scrollLeft, .scrollRight: symbol = "scroll"; title = binding!.title; detail = L("作用于鼠标所在位置")
+                default: symbol = "arrow.turn.up.right"; title = L("保留原按键功能"); detail = L("继续使用系统对这个按键的默认处理")
                 }
             }
             let disc = NSBezierPath(roundedRect: NSRect(x: 18, y: 27, width: 53, height: 53), xRadius: 16, yRadius: 16)
@@ -191,17 +191,22 @@ final class SettingsView: SettingsPage {
     static let size = NSSize(width: 1080, height: 812)
     override var isFlipped: Bool { true }
     init(mapping: NSView, unlock: NSView, remote: NSPopUpButton, discovery: NSButton, pages: NSSegmentedControl,
-         connection: NSTextField, audio: NSTextField, permission: NSTextField, permissionsButton: NSButton, message: NSTextField) {
+         connection: NSTextField, audio: NSTextField, permission: NSTextField, permissionsButton: NSButton, message: NSTextField,
+         readiness: NSTextField, wechatButton: NSButton) {
         super.init(frame: NSRect(origin: .zero, size: Self.size))
         appearance = NSAppearance(named: .aqua)
         func place(_ view: NSView, _ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) {
             view.frame = NSRect(x: x, y: y, width: width, height: height); addSubview(view)
         }
         place(SettingsTheme.eyebrow("REMOTE VIBE  /  DESKTOP CONTROL"), 30, 22, 380, 16)
-        place(SettingsTheme.label("把习惯，放进按键。", size: 29, weight: .semibold, color: SettingsTheme.ink), 28, 49, 460, 42)
-        place(SettingsTheme.label("一个按键，三种可能。", size: 12), 30, 96, 440, 19)
+        place(SettingsTheme.label(L("把习惯，放进按键。"), size: 29, weight: .semibold, color: SettingsTheme.ink), 28, 49, 460, 42)
+        readiness.font = .systemFont(ofSize: 12, weight: .medium)
+        readiness.maximumNumberOfLines = 1
+        readiness.lineBreakMode = .byTruncatingTail
+        readiness.setAccessibilityLabel(L("使用就绪状态"))
+        place(readiness, 30, 96, 750, 19)
         remote.font = .systemFont(ofSize: 12, weight: .medium)
-        remote.setAccessibilityLabel("当前遥控器")
+        remote.setAccessibilityLabel(L("当前遥控器"))
         place(remote, 737, 24, 168, 32)
         place(discovery, 918, 23, 134, 34)
         pages.segmentStyle = .separated
@@ -224,7 +229,8 @@ final class SettingsView: SettingsPage {
         place(audio, 363, 733, 269, 31)
         place(permission, 655, 733, 253, 31)
         place(permissionsButton, 920, 731, 115, 30)
-        place(message, 46, 766, 976, 19)
+        place(message, 46, 766, 806, 19)
+        place(wechatButton, 876, 761, 159, 29)
         captureHorizontalLayout()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

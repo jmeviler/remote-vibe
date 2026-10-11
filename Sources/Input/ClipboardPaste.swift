@@ -7,43 +7,43 @@ final class ClipboardPaste {
     private var ownedChange = -1
 
     func paste(_ text: String, allowed: @escaping () -> Bool, sendPaste: (pid_t) -> Void) -> String {
-        guard previous == nil else { return "上一段文字仍在输入，请稍候" }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "请先设置常用文本" }
-        guard allowed(), let target = InputFocus.current() else { return "请先将光标放到目标输入框" }
+        guard previous == nil else { return L("上一段文字仍在输入，请稍候") }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return L("请先设置常用文本") }
+        guard allowed(), let target = InputFocus.current() else { return L("请先将光标放到目标输入框") }
         let held = CGEventSource.flagsState(.combinedSessionState)
-        guard held.intersection([.maskControl, .maskAlternate, .maskShift]).isEmpty else { return "请先松开键盘修饰键" }
+        guard held.intersection([.maskControl, .maskAlternate, .maskShift]).isEmpty else { return L("请先松开键盘修饰键") }
 
         let board = NSPasteboard.general
         let before = board.changeCount
         let items = board.pasteboardItems
-        guard items != nil || (board.types ?? []).isEmpty else { return "无法保留当前剪贴板，未输入文本" }
+        guard items != nil || (board.types ?? []).isEmpty else { return L("无法保留当前剪贴板，未输入文本") }
         var snapshot: [NSPasteboardItem] = []
         var bytes = 0
         // Preserve every representation, including images and file URLs. Never replace a clipboard we cannot save.
         for item in items ?? [] {
-            guard !item.types.isEmpty else { return "无法保留当前剪贴板，未输入文本" }
+            guard !item.types.isEmpty else { return L("无法保留当前剪贴板，未输入文本") }
             let copy = NSPasteboardItem()
             for type in item.types {
-                guard let data = item.data(forType: type) else { return "无法保留当前剪贴板，未输入文本" }
+                guard let data = item.data(forType: type) else { return L("无法保留当前剪贴板，未输入文本") }
                 bytes += data.count
-                guard bytes <= 32 * 1024 * 1024 else { return "当前剪贴板内容过大，未输入文本" }
-                guard copy.setData(data, forType: type) else { return "无法保留当前剪贴板，未输入文本" }
+                guard bytes <= 32 * 1024 * 1024 else { return L("当前剪贴板内容过大，未输入文本") }
+                guard copy.setData(data, forType: type) else { return L("无法保留当前剪贴板，未输入文本") }
             }
             snapshot.append(copy)
         }
-        guard board.changeCount == before, allowed(), target.isCurrent else { return "输入位置或剪贴板已变化，请重试" }
+        guard board.changeCount == before, allowed(), target.isCurrent else { return L("输入位置或剪贴板已变化，请重试") }
         previous = snapshot
         board.clearContents()
         guard board.setString(text, forType: .string) else {
-            ownedChange = board.changeCount; restore(); return "无法准备文本，剪贴板已恢复"
+            ownedChange = board.changeCount; restore(); return L("无法准备文本，剪贴板已恢复")
         }
         ownedChange = board.changeCount
-        guard allowed(), target.isCurrent else { restore(); return "输入位置已变化，未输入文本" }
+        guard allowed(), target.isCurrent else { restore(); return L("输入位置已变化，未输入文本") }
         sendPaste(target.pid)
         let work = DispatchWorkItem { [weak self] in self?.restore() }
         restoreWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
-        return "已发送文本粘贴 · 未按回车"
+        return L("已发送文本粘贴 · 未按回车")
     }
 
     func stop() { restore() }

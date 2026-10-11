@@ -1,0 +1,72 @@
+Remote Vibe — Getting started
+
+For users comfortable with Bluetooth pairing and macOS permissions.
+Requires Apple Silicon, macOS 15+, and a Google Chromecast Voice Remote or Xiaomi RC003.
+Voice recognition requires WeChat’s global hold-Fn voice input; a chat voice-message button is not enough.
+Remote Vibe does not provide its own speech recognition service.
+
+FIRST INSTALL
+1. Open “1-安装 Remote Vibe.pkg” in this archive and follow the installer.
+   Installation needs administrator access and briefly restarts system audio.
+   If components already exist, use the App-only update archive instead.
+2. This build is ad hoc signed, not Apple-notarized. If blocked, review the download in
+   System Settings > Privacy & Security and allow opening. Do not disable system protection.
+3. Pair the remote in System Settings > Bluetooth. Disconnect it from its TV first.
+   Google normally appears as “Chromecast Remote”; Xiaomi may appear as “小米蓝牙语音遥控器”.
+4. Open Remote Vibe in Applications. Choose your remote model and allow Bluetooth,
+   Accessibility, and Input Monitoring for custom actions. Restart the app if macOS requests it.
+   The app reconnects remembered devices. To find a new remote, click Scan Remote.
+   Scans last at most 20 seconds and stop when connected.
+5. Enable WeChat’s global hold-Fn voice input and microphone permission.
+   Set WeChat’s input to the system default or “Chromecast Mic” (also used by Xiaomi).
+
+VOICE AND KEYS
+Check readiness at the top of settings, focus a text field in another app, hold the original
+voice button and speak. Release it and wait for WeChat to finish before speaking again.
+Sessions last up to about 55 seconds. “Test WeChat Voice” explains the setup.
+Device readiness cannot confirm recognition; Remote Vibe does not read the resulting text.
+Only one remote is selected at a time; Google and Xiaomi keep separate mappings.
+The interface follows the system language (English or Simplified Chinese).
+
+Click a button in the diagram, choose Click / Double Click / Hold, then Save and Apply.
+Double click waits 0.3 seconds; hold starts at 0.55 seconds. Holding gestures do not repeat.
+Fn Key only simulates Fn and uses the target app’s microphone; it does not open the remote mic.
+Google ATVV 1.0 can use other buttons for Remote Microphone. Xiaomi and older Google protocols
+require the original voice button. Buttons that send only infrared cannot be remapped.
+
+For Codex CLI, use Basic Keys and Choices for arrows, Enter, Esc, Tab and Shift+Tab.
+Terminal / Codex CLI adds number keys and Ctrl+C/G/O/R. Custom Key / Shortcut combines
+Control, Option, Shift, Command or Fn with a key. Follow the terminal’s current hints;
+Tab and Enter also queue or steer prompts while Codex is running.
+Google defaults: Mute = Enter; Center OK = Esc; Back = Backspace; Home = switch window;
+YouTube = switch display. Xiaomi: Center OK = Enter; Back = Backspace; others retain defaults.
+
+Google sequence unlock is off by default. Record and repeat 8–16 presses, save the Mac login
+password, practice, then manually verify on the lock screen. The test types one character
+without Enter; clear it and unlock manually before confirming the result.
+The sequence and password stay in the local Keychain. Startup/FileVault login is unsupported.
+
+UPDATES AND REMOVAL
+The menu shows your version. Check for Updates contacts GitHub only when clicked;
+it does not download or install automatically. Draft releases do not appear in the check.
+For app updates, use the “App-AppleSilicon.zip” archive and its Update-README.txt.
+
+Voice temporarily switches the system default microphone and attempts to restore it afterward.
+Choose a physical microphone explicitly in conferencing/recording apps to avoid switching them.
+Default speakers are unchanged. After a crash or forced quit, reopen Remote Vibe to try restoring input.
+The app does not save recordings or transcripts; recognition is handled by WeChat.
+
+To uninstall, quit Remote Vibe and run “2-卸载 Remote Vibe.pkg”. It moves the app and driver
+into /Users/Shared/RemoteVibe-Uninstalled/ for recovery, and restarts system audio.
+Personal settings remain. Clear any saved unlock password inside the app before uninstalling.
+Installed locations: /Applications/Remote Vibe.app and
+/Library/Audio/Plug-Ins/HAL/RemoteVibeMic.driver. No login item, web service or kernel extension is added.
+
+TROUBLESHOOTING
+No connection: check model/pairing, wake the remote, then scan if needed.
+No voice prompt: check Accessibility and WeChat hold-Fn settings.
+Prompt but no text: check WeChat microphone permission, input device and recognition availability.
+Custom actions fail: check Input Monitoring and Accessibility; quit and reopen after permission changes.
+Managed Macs may need an administrator to allow installation or permissions.
+
+Source and licenses are in “源码与许可证”. Project: https://github.com/jmeviler/remote-vibe

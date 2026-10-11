@@ -31,7 +31,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     var mappedVoiceActive: Bool { audio.source == .mappedButton }
 
     var protocolSummary: String {
-        guard let caps = proto.capabilities, let codec = proto.codec else { return "等待协商" }
+        guard let caps = proto.capabilities, let codec = proto.codec else { return L("等待协商") }
         return "ATVV \(caps.version) · \(codec.sampleRate) Hz · \(caps.frameSize) bytes"
     }
 
@@ -75,7 +75,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             command = nil
             peripheral = nil
             connectionTimeout?.invalidate()
-            onStatus(central.state == .unauthorized ? "请允许蓝牙访问" : "等待蓝牙开启")
+            onStatus(central.state == .unauthorized ? L("请允许蓝牙访问") : L("等待蓝牙开启"))
         }
     }
 
@@ -87,14 +87,14 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             connect(known); return
         }
         if connectSystemDevice() { return }
-        onStatus("尚未连接，请先在系统蓝牙配对；需要时手动扫描")
+        onStatus(L("尚未连接，请先在系统蓝牙配对；需要时手动扫描"))
     }
 
     private func connectSystemDevice() -> Bool {
         let matches = central.retrieveConnectedPeripherals(withServices: [CBUUID(string: ATVVProtocol.serviceUUID), CBUUID(string: "1812")])
             .filter { profile.accepts(name: $0.name) }
         if matches.count == 1 { connect(matches[0]); return true }
-        if matches.count > 1 { onStatus("发现多个遥控器，请只连接要使用的那一个"); return true }
+        if matches.count > 1 { onStatus(L("发现多个遥控器，请只连接要使用的那一个")); return true }
         return false
     }
 
@@ -105,7 +105,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         retryCount = 0
         if scanning {
             stopScanning()
-            onStatus("扫描已停止，需要时可再次手动扫描")
+            onStatus(L("扫描已停止，需要时可再次手动扫描"))
             return
         }
         if let p = peripheral {
@@ -113,21 +113,21 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             command = nil
             connectionTimeout?.invalidate()
             central.cancelPeripheralConnection(p)
-            onStatus("连接等待已取消，可手动扫描遥控器")
+            onStatus(L("连接等待已取消，可手动扫描遥控器"))
             return
         }
         guard central?.state == .poweredOn else {
-            onStatus(central?.state == .unauthorized ? "请允许蓝牙访问" : "请先开启蓝牙")
+            onStatus(central?.state == .unauthorized ? L("请允许蓝牙访问") : L("请先开启蓝牙"))
             return
         }
         if connectSystemDevice() { return }
         central.scanForPeripherals(withServices: [CBUUID(string: ATVVProtocol.serviceUUID)])
         scanStarts += 1
-        onStatus("正在扫描所选型号（最多 20 秒），请唤醒遥控器")
+        onStatus(L("正在扫描所选型号（最多 20 秒），请唤醒遥控器"))
         scanTimeout = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self] _ in
             guard let self else { return }
             self.stopScanning()
-            self.onStatus("未找到遥控器，扫描已停止；请检查配对后手动重试")
+            self.onStatus(L("未找到遥控器，扫描已停止；请检查配对后手动重试"))
         }
     }
 
@@ -142,7 +142,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         reconnect?.invalidate()
         peripheral = p
         p.delegate = self
-        onStatus("正在等待遥控器连接，按键可唤醒")
+        onStatus(L("正在等待遥控器连接，按键可唤醒"))
         central.connect(p)
     }
 
@@ -160,7 +160,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             guard let self, !self.ready, let p = self.peripheral else { return }
             self.central.cancelPeripheralConnection(p)
         }
-        onStatus("正在初始化遥控器语音")
+        onStatus(L("正在初始化遥控器语音"))
         audio.reset()
         subscribed.removeAll()
         handshakeSent = false
@@ -179,18 +179,18 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard !stopping, central.state == .poweredOn else { return }
         reconnect?.invalidate()
         guard UserDefaults.standard.string(forKey: rememberedKey) != nil, retryCount < 3 else {
-            onStatus("连接未就绪，请检查配对后手动重试")
+            onStatus(L("连接未就绪，请检查配对后手动重试"))
             return
         }
         let delay: TimeInterval = [2, 10, 30][retryCount]
         retryCount += 1
-        onStatus("遥控器已断开，等待已记住的设备重连")
+        onStatus(L("遥控器已断开，等待已记住的设备重连"))
         reconnect = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in self?.findKnown() }
     }
 
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
         guard p === peripheral else { return }
-        guard error == nil, let service = p.services?.first(where: { $0.uuid == CBUUID(string: ATVVProtocol.serviceUUID) }) else { onStatus("读取语音服务失败"); return }
+        guard error == nil, let service = p.services?.first(where: { $0.uuid == CBUUID(string: ATVVProtocol.serviceUUID) }) else { onStatus(L("读取语音服务失败")); return }
         p.discoverCharacteristics(nil, for: service)
         if profile == .xiaomiRC003, let info = p.services?.first(where: { $0.uuid == CBUUID(string: "180A") }) {
             p.discoverCharacteristics([CBUUID(string: "2A24")], for: info)
@@ -199,7 +199,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard p === peripheral else { return }
-        guard error == nil else { onStatus("读取语音通道失败"); return }
+        guard error == nil else { onStatus(L("读取语音通道失败")); return }
         for c in service.characteristics ?? [] {
             switch c.uuid.uuidString.uppercased() {
             case ATVVProtocol.txUUID: command = c
@@ -213,7 +213,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func peripheral(_ p: CBPeripheral, didUpdateNotificationStateFor c: CBCharacteristic, error: Error?) {
         guard p === peripheral else { return }
-        guard error == nil, c.isNotifying else { onStatus("订阅遥控器语音失败"); return }
+        guard error == nil, c.isNotifying else { onStatus(L("订阅遥控器语音失败")); return }
         subscribed.insert(c.uuid.uuidString.uppercased())
         negotiate()
     }
@@ -233,7 +233,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard p === peripheral, !stopping, error == nil, let data = c.value else { return }
         if c.uuid == CBUUID(string: "2A24") {
             modelConfirmed = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) == "RC003"
-            if modelConfirmed { negotiate() } else { onStatus("这款小米型号暂未适配，仅支持 RC003") }
+            if modelConfirmed { negotiate() } else { onStatus(L("这款小米型号暂未适配，仅支持 RC003")) }
             return
         }
         if c.uuid.uuidString.uppercased() == ATVVProtocol.rxUUID {
@@ -251,7 +251,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 UserDefaults.standard.set(p.identifier.uuidString, forKey: rememberedKey)
                 connectionTimeout?.invalidate()
                 if profile == .chromecast, let close = try? proto.micCloseCommand(streamID: 0) { write(close) }
-                onStatus("遥控器已连接")
+                onStatus(L("遥控器已连接"))
             } catch { onStatus(error.localizedDescription) }
         default: audio.receive(event)
         }

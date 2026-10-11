@@ -24,7 +24,7 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     var scanning: Bool { central?.isScanning == true }
     var connecting: Bool { peripheral != nil && !ready }
     private(set) var scanStarts = 0
-    private(set) var ready = false
+    var ready: Bool { audio.ready }
     var streaming: Bool { audio.streaming }
     var frameCount: Int { audio.frameCount }
     var voiceBusy: Bool { audio.busy }
@@ -44,13 +44,16 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         audio.onSamples = { [weak self] in self?.onSamples($0, $1) }
         audio.onEnd = { [weak self] in self?.onEnd($0) }
         audio.onStatus = { [weak self] in self?.onStatus($0) }
+        audio.onDisconnect = { [weak self] in
+            guard let self, let peripheral = self.peripheral else { return }
+            self.central?.cancelPeripheralConnection(peripheral)
+        }
     }
 
     func start() { central = CBCentralManager(delegate: self, queue: .main) }
 
     func shutdown() {
         stopping = true
-        ready = false
         audio.reset()
         reconnect?.invalidate()
         connectionTimeout?.invalidate()
@@ -68,7 +71,6 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         else {
             reconnect?.invalidate()
             stopScanning()
-            ready = false
             audio.reset()
             command = nil
             peripheral = nil
@@ -170,7 +172,6 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral p: CBPeripheral, error: Error?) { if p === peripheral { disconnected() } }
 
     private func disconnected() {
-        ready = false
         command = nil
         peripheral = nil
         connectionTimeout?.invalidate()
@@ -245,7 +246,6 @@ final class Remote: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             guard handshakeSent, !ready else { return }
             do {
                 try proto.acceptCapabilities(capabilities)
-                ready = true
                 audio.ready = true
                 retryCount = 0
                 UserDefaults.standard.set(p.identifier.uuidString, forKey: rememberedKey)

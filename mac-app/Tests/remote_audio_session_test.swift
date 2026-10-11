@@ -1,7 +1,7 @@
 import Foundation
 
-private final class Clock: VoiceSessionScheduling {
-    final class Task: VoiceSessionTimer {
+private final class Clock {
+    final class Task {
         let deadline: TimeInterval
         let action: () -> Void
         var cancelled = false
@@ -11,8 +11,8 @@ private final class Clock: VoiceSessionScheduling {
     var now: TimeInterval = 0
     var tasks: [Task] = []
     var pending: Int { tasks.filter { !$0.cancelled }.count }
-    func after(_ delay: TimeInterval, _ action: @escaping () -> Void) -> VoiceSessionTimer {
-        let task = Task(now + delay, action); tasks.append(task); return task
+    func after(_ delay: TimeInterval, _ action: @escaping () -> Void) -> RemoteAudioSession.Cancel {
+        let task = Task(now + delay, action); tasks.append(task); return { task.cancel() }
     }
     func advance(_ duration: TimeInterval) {
         let end = now + duration
@@ -31,8 +31,10 @@ private final class Rig {
     var ends: [Bool] = []
     var samples = 0
     var statuses: [String] = []
+    var disconnections = 0
     init(_ profile: RemoteProfile = .chromecast, version: ATVVVersion = .v10) throws {
-        session = RemoteAudioSession(profile: profile, scheduler: clock)
+        let clock = self.clock
+        session = RemoteAudioSession(profile: profile, schedule: clock.after, now: { clock.now })
         try session.proto.acceptCapabilities(.init(version: version, codecs: 2, interactionModel: 3,
                                                   frameSize: profile == .chromecast ? 160 : 120))
         session.ready = true
@@ -41,10 +43,11 @@ private final class Rig {
         session.onEnd = { [weak self] in self?.ends.append($0) }
         session.onSamples = { [weak self] values, _ in self?.samples += values.count }
         session.onStatus = { [weak self] in self?.statuses.append($0) }
+        session.onDisconnect = { [weak self] in self?.disconnections += 1 }
     }
     func start(_ id: UInt8 = 0, reason: UInt8 = 0) { session.receive(.audioStart(reason: reason, codec: .adpcm16k, streamID: id)) }
     func audio(_ count: Int = 160) { session.receiveAudio(Data(repeating: 0x12, count: count)) }
-    func stop() { session.receive(.audioStop(reason: 0)) }
+    func stop(_ reason: UInt8 = 0) { session.receive(.audioStop(reason: reason)) }
     func count(_ bytes: [UInt8]) -> Int { commands.filter { $0 == Data(bytes) }.count }
 }
 
@@ -53,6 +56,7 @@ enum RemoteAudioSessionTest {
     static func main() throws {
         try directOpenAndTail()
         try quickReleaseAndLateReply()
+        try physicalFallbackAfterCancellation()
         try failedRequests()
         try preservePhysicalVoice()
         try cancellationAndLimit()
@@ -88,18 +92,41 @@ enum RemoteAudioSessionTest {
         precondition(r.session.beginMappedVoice())
         r.session.endMappedVoice(normal: true)
         precondition(r.begins == 0 && r.ends.isEmpty && r.count([0x0d, 0]) == 1)
-        precondition(!r.session.beginMappedVoice()) // pending cancellation cannot be reused
-        r.stop() // close ACK is not necessarily the delayed open ACK
-        r.start(17, reason: 3) // some firmware reports host streams as HTT
-        r.audio()
-        precondition(r.count([0x0d, 17]) == 1 && r.begins == 0 && r.samples == 0)
-        r.clock.advance(1.6)
+        precondition(r.clock.pending == 0) // no cooldown timer or global input block
+        precondition(!r.session.beginMappedVoice()) // only mapped requests are throttled
+        r.stop()
+        r.start(); r.audio() // delayed v1 host reply, not a physical HTT press
+        precondition(r.count([0x0d, 0]) == 2 && r.begins == 0 && r.samples == 0)
+        r.stop(); r.clock.advance(1.6)
         precondition(r.clock.pending == 0 && !r.session.busy)
-        r.start() // unsolicited standard host stream remains rejected after cooldown
-        precondition(r.begins == 0 && r.count([0x0d, 0]) == 2)
         precondition(r.session.beginMappedVoice())
         r.start(); r.audio()
         precondition(r.begins == 1)
+    }
+
+    static func physicalFallbackAfterCancellation() throws {
+        let r = try Rig()
+        precondition(r.session.beginMappedVoice())
+        r.session.endMappedVoice(normal: true)
+        r.clock.advance(0.1)
+        r.start(42, reason: 3); r.audio()
+        precondition(r.begins == 1 && r.samples == 320 && r.count([0x0d, 42]) == 0)
+        // Late host reply and its close ACK must not interrupt the physical key.
+        r.start(); r.stop()
+        precondition(r.session.streaming && r.ends.isEmpty)
+        r.stop(2)
+        precondition(r.ends == [true] && r.clock.pending == 0)
+
+        let search = try Rig()
+        precondition(search.session.beginMappedVoice())
+        search.session.cancel()
+        search.session.receive(.startSearch)
+        search.start(); search.audio(); search.stop()
+        precondition(search.begins == 1 && search.ends == [true])
+
+        let original = try Rig()
+        original.start(42, reason: 3); original.audio(); original.stop()
+        precondition(original.ends == [true]) // no host request: do not change old STOP handling
     }
 
     static func failedRequests() throws {
@@ -107,7 +134,7 @@ enum RemoteAudioSessionTest {
         precondition(noResponse.session.beginMappedVoice())
         noResponse.clock.advance(1.6)
         precondition(noResponse.begins == 0 && !noResponse.session.opening && noResponse.statuses.count == 1)
-        noResponse.start(); noResponse.audio()
+        noResponse.start(); noResponse.audio(); noResponse.stop()
         precondition(noResponse.begins == 0 && noResponse.samples == 0)
         noResponse.clock.advance(2)
         precondition(noResponse.clock.pending == 0)
@@ -132,9 +159,34 @@ enum RemoteAudioSessionTest {
         noStop.start(23, reason: 3); noStop.audio()
         noStop.session.endMappedVoice(normal: true)
         noStop.clock.advance(0.5)
-        precondition(noStop.count([0x0d, 23]) == 2 && noStop.ends == [true])
-        noStop.clock.advance(2)
-        precondition(noStop.clock.pending == 0)
+        precondition(noStop.count([0x0d, 23]) == 2 && noStop.ends.isEmpty)
+        noStop.audio() // the remote has not stopped sending
+        noStop.clock.advance(0.4)
+        precondition(noStop.ends == [false] && noStop.disconnections == 1)
+        precondition(noStop.session.busy && !noStop.session.ready && !noStop.session.streaming)
+        noStop.session.cancel() // explicit Stop still targets the retained stream id
+        precondition(noStop.count([0x0d, 23]) == 3 && noStop.ends == [false])
+        noStop.audio(); noStop.stop(); noStop.clock.advance(2)
+        precondition(noStop.samples == 640 && noStop.clock.pending == 0)
+        precondition(!noStop.session.beginMappedVoice())
+        noStop.session.reset() // only disconnect/reset clears the failed transport
+        precondition(!noStop.session.busy)
+
+        let tailOnly = try Rig()
+        precondition(tailOnly.session.beginMappedVoice())
+        tailOnly.start(); tailOnly.session.endMappedVoice(normal: true)
+        tailOnly.audio() // first packet arriving during close must not cancel the close timeout
+        tailOnly.clock.advance(0.9)
+        precondition(tailOnly.disconnections == 1 && tailOnly.ends == [false])
+
+        let delayedStop = try Rig()
+        precondition(delayedStop.session.beginMappedVoice())
+        delayedStop.start(9, reason: 3); delayedStop.audio()
+        delayedStop.session.endMappedVoice(normal: true)
+        delayedStop.clock.advance(0.5); delayedStop.stop()
+        delayedStop.clock.advance(1)
+        precondition(delayedStop.count([0x0d, 9]) == 2 && delayedStop.ends == [true])
+        precondition(delayedStop.disconnections == 0 && delayedStop.clock.pending == 0)
     }
 
     static func preservePhysicalVoice() throws {
@@ -152,7 +204,7 @@ enum RemoteAudioSessionTest {
             }
             r.clock.advance(4)
             precondition(r.count([0x0e, 42]) == (profile == .chromecast ? 1 : 0))
-            r.stop()
+            r.stop(2)
             precondition(r.begins == 1 && r.ends == [true] && r.clock.pending == 0)
             precondition(r.count([0x0c, 0]) == 0)
         }
@@ -170,7 +222,7 @@ enum RemoteAudioSessionTest {
 
         let releasedBeforeGrant = try Rig()
         releasedBeforeGrant.session.receive(.startSearch)
-        releasedBeforeGrant.stop(); releasedBeforeGrant.start(); releasedBeforeGrant.audio()
+        releasedBeforeGrant.stop(); releasedBeforeGrant.start(); releasedBeforeGrant.audio(); releasedBeforeGrant.stop()
         precondition(releasedBeforeGrant.begins == 0 && releasedBeforeGrant.samples == 0)
         releasedBeforeGrant.clock.advance(2)
         precondition(!releasedBeforeGrant.session.busy && releasedBeforeGrant.clock.pending == 0)
@@ -211,7 +263,7 @@ enum RemoteAudioSessionTest {
 
         let limit = try Rig()
         precondition(limit.session.beginMappedVoice())
-        limit.start(); limit.audio(); limit.clock.advance(55.5)
+        limit.start(); limit.audio(); limit.clock.advance(55); limit.stop()
         precondition(limit.ends == [true] && !limit.session.streaming)
         limit.clock.advance(2)
         precondition(limit.clock.pending == 0)
@@ -219,12 +271,16 @@ enum RemoteAudioSessionTest {
 
     static func protocolVariants() throws {
         let legacy = try Rig(version: .v04)
-        precondition(legacy.session.beginMappedVoice())
+        precondition(!legacy.session.beginMappedVoice()) // software open is validated only for v1
+        legacy.session.receive(legacy.session.proto.parseControl(Data([0x04])))
+        legacy.audio()
+        precondition(legacy.begins == 1 && legacy.samples > 0 && legacy.commands.isEmpty)
+        legacy.stop()
+        precondition(legacy.ends == [true] && legacy.clock.pending == 0)
+        legacy.session.receive(.startSearch)
         precondition(legacy.count([0x0c, 0, 2]) == 1)
-        legacy.start(); legacy.audio()
-        precondition(legacy.samples > 0)
-        legacy.session.endMappedVoice(normal: true); legacy.stop()
-        precondition(legacy.count([0x0d]) == 1 && legacy.ends == [true])
+        legacy.start(); legacy.audio(); legacy.stop()
+        precondition(legacy.begins == 2 && legacy.ends == [true, true])
 
         let sync = try Rig()
         precondition(sync.session.beginMappedVoice())

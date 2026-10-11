@@ -1,22 +1,14 @@
 import Foundation
 
-protocol VoiceSessionTimer { func cancel() }
-protocol VoiceSessionScheduling {
-    func after(_ delay: TimeInterval, _ action: @escaping () -> Void) -> VoiceSessionTimer
-}
-extension Timer: VoiceSessionTimer { func cancel() { invalidate() } }
-struct VoiceSessionScheduler: VoiceSessionScheduling {
-    func after(_ delay: TimeInterval, _ action: @escaping () -> Void) -> VoiceSessionTimer {
-        let timer = Timer(timeInterval: delay, repeats: false) { _ in action() }
-        RunLoop.main.add(timer, forMode: .common)
-        return timer
-    }
-}
-
-// Transport-independent voice lifecycle. Timers exist only while opening,
-// recording or closing; physical voice keys keep their existing audio path.
+// The only injected dependencies are scheduling and monotonic time, for offline tests.
 final class RemoteAudioSession {
+    typealias Cancel = () -> Void
+    typealias Schedule = (TimeInterval, @escaping () -> Void) -> Cancel
     enum Source { case physical, mappedButton }
+    private enum Phase {
+        case idle, opening(Source), recording(Source, UInt8)
+        case closing(Source, UInt8, normal: Bool), failed(Source, UInt8)
+    }
     let profile: RemoteProfile
     private(set) var proto: ATVVProtocol
     var ready = false
@@ -25,52 +17,65 @@ final class RemoteAudioSession {
     var onSamples: ([Int16], Int) -> Void = { _, _ in }
     var onEnd: (Bool) -> Void = { _ in }
     var onStatus: (String) -> Void = { _ in }
-    private(set) var source: Source?
-    private(set) var streaming = false
+    var onDisconnect: () -> Void = {}
+    private var phase = Phase.idle
+    private var mappedRetryAfter: TimeInterval = 0
+    private var phaseTimer: Cancel?
+    private var keepAlive: Cancel?
+    private var limit: Cancel?
+    private let schedule: Schedule
+    private let now: () -> TimeInterval
     private(set) var frameCount = 0
-    private(set) var opening = false
-    private var streamID: UInt8 = 0
-    private var closingNormally: Bool?
-    private var rejectingLateStart = false
-    private var responseTimer: VoiceSessionTimer?
-    private var firstAudioTimer: VoiceSessionTimer?
-    private var keepAlive: VoiceSessionTimer?
-    private var limit: VoiceSessionTimer?
-    private var closeTimer: VoiceSessionTimer?
-    private var rejectionTimer: VoiceSessionTimer?
-    private let scheduler: VoiceSessionScheduling
-    var busy: Bool { source != nil || rejectingLateStart }
+    var source: Source? {
+        switch phase {
+        case .idle: return nil
+        case .opening(let source), .recording(let source, _), .closing(let source, _, _), .failed(let source, _): return source
+        }
+    }
+    var opening: Bool { if case .opening = phase { return true }; return false }
+    var streaming: Bool {
+        switch phase { case .recording, .closing(_, _, true): return true; default: return false }
+    }
+    var busy: Bool { source != nil }
+    private var streamID: UInt8 {
+        switch phase { case .recording(_, let id), .closing(_, let id, _), .failed(_, let id): return id; default: return 0 }
+    }
 
-    init(profile: RemoteProfile, scheduler: VoiceSessionScheduling = VoiceSessionScheduler()) {
-        self.profile = profile
-        self.scheduler = scheduler
+    init(profile: RemoteProfile, schedule: @escaping Schedule = { delay, action in
+        let timer = Timer(timeInterval: delay, repeats: false) { _ in action() }
+        RunLoop.main.add(timer, forMode: .common)
+        return { timer.invalidate() }
+    }, now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
+        self.profile = profile; self.schedule = schedule; self.now = now
         proto = ATVVProtocol(profile: profile)
     }
 
     func reset() {
-        cancel()
-        rejectionTimer?.cancel(); rejectionTimer = nil
-        rejectingLateStart = false
         ready = false
+        if busy { closeStream(streamID) }
+        finish(normal: false)
+        mappedRetryAfter = 0
         proto = ATVVProtocol(profile: profile)
     }
 
     @discardableResult
     func beginMappedVoice() -> Bool {
-        guard profile == .chromecast else { return false }
+        // Only v1.0 can distinguish late host replies from a physical voice press.
+        guard profile == .chromecast, ready, now() >= mappedRetryAfter else { return false }
+        guard proto.capabilities?.version == .v10 else {
+            onStatus("此 Google 遥控器使用旧语音协议，请使用原语音键")
+            return false
+        }
         return requestOpen(source: .mappedButton)
     }
 
     private func requestOpen(source: Source) -> Bool {
-        guard ready, !busy,
-              let command = try? proto.micOpenCommand() else { return false }
-        self.source = source; opening = true; streamID = 0
+        guard ready, !busy, let command = try? proto.micOpenCommand() else { return false }
+        phase = .opening(source)
         proto.prepareForAudioStream()
-        // Arm before writing so even an immediate response can cancel the timer.
-        responseTimer = scheduler.after(1.5) { [weak self] in
-            guard let self, self.opening else { return }
-            self.cancel()
-            self.onStatus("遥控器没有响应开麦，请松开后重试或使用原语音键")
+        after(1.5) { [weak self] in
+            self?.cancel()
+            self?.onStatus("遥控器没有响应开麦，请松开后重试或使用原语音键")
         }
         send(command)
         return true
@@ -78,127 +83,135 @@ final class RemoteAudioSession {
 
     func endMappedVoice(normal: Bool) {
         guard source == .mappedButton else { return }
-        if !normal || !streaming { cancel(); return }
-        guard closingNormally == nil else { return }
-        closingNormally = true
-        keepAlive?.cancel(); keepAlive = nil
-        limit?.cancel(); limit = nil
-        firstAudioTimer?.cancel(); firstAudioTimer = nil
-        // Keep accepting in-flight audio until AUDIO_STOP, with a bounded fallback.
-        closeTimer = scheduler.after(0.4) { [weak self] in
-            guard let self, self.closingNormally != nil else { return }
-            self.closeStream(self.streamID)
-            self.rejectLateStarts()
-            self.finish(normal: true)
-        }
-        closeStream(streamID)
+        if !normal || opening { cancel() } else { beginClosing(normal: true) }
     }
 
     func cancel() {
-        let pending = opening
-        let hadMappedVoice = source == .mappedButton
-        closingNormally = false
-        if pending || streaming { closeStream(streamID) }
-        if pending || hadMappedVoice { rejectLateStarts() }
-        finish(normal: false)
+        if opening {
+            // Throttle only the next mapped request. Physical presses remain available.
+            mappedRetryAfter = now() + 1.5
+            finish(normal: false)
+            closeStream(0)
+        } else { beginClosing(normal: false) }
     }
 
     func receiveAudio(_ data: Data) {
         guard streaming, let decoded = proto.decodeAudio(data), let codec = proto.codec else { return }
+        if frameCount == 0, case .recording = phase { phaseTimer?(); phaseTimer = nil }
         frameCount += 1
-        firstAudioTimer?.cancel(); firstAudioTimer = nil
         onSamples(decoded.samples, codec.sampleRate)
     }
 
     func receive(_ event: ATVVControlEvent) {
         switch event {
-        case .startSearch:
-            _ = requestOpen(source: .physical)
+        case .startSearch: _ = requestOpen(source: .physical)
         case .audioStart(let reason, let codec, let sid):
             guard ready else { return }
-            if rejectingLateStart {
-                closeStream(sid)
+            let hostReply = profile == .chromecast && proto.capabilities?.version == .v10 && reason == 0
+            if hostReply && !opening {
+                if busy {
+                    if sid != streamID { mappedRetryAfter = now() + 1.5; closeStream(sid) }
+                    return
+                }
+                phase = .closing(.mappedButton, sid, normal: false)
+                awaitStop(retry: true); closeStream(sid)
                 return
             }
-            // A delayed reply to a cancelled host request must never start Fn.
-            if profile == .chromecast, source == nil, reason == 0 {
-                closeStream(sid)
-                return
-            }
-            guard !streaming else { return }
+            guard !busy || opening else { return }
             guard profile != .xiaomiRC003 || codec == .adpcm16k else {
-                closeStream(sid); finish(normal: false)
+                phase = .closing(.physical, sid, normal: false)
+                awaitStop(retry: true); closeStream(sid)
                 onStatus("小米切换到不支持的音频编码")
                 return
             }
-            if source == nil { source = .physical }
-            opening = false
-            responseTimer?.cancel(); responseTimer = nil
-            streamID = sid
-            proto.beginAudioStream(codec: codec)
-            streaming = true; frameCount = 0
+            let owner = source ?? .physical
+            phaseTimer?(); phaseTimer = nil
+            phase = .recording(owner, sid)
+            proto.beginAudioStream(codec: codec); frameCount = 0
             onBegin()
-            // The app can refuse a session while audio drains or permission is missing.
-            guard streaming, closingNormally == nil else { return }
-            if source == .mappedButton {
-                firstAudioTimer = scheduler.after(1.5) { [weak self] in
-                    guard let self, self.streaming, self.frameCount == 0 else { return }
-                    self.cancel()
-                    self.onStatus("遥控器没有传回音频，请松开后重试或使用原语音键")
+            guard case .recording = phase else { return }
+            if owner == .mappedButton {
+                after(1.5) { [weak self] in
+                    self?.cancel()
+                    self?.onStatus("遥控器没有传回音频，请松开后重试或使用原语音键")
                 }
             }
             scheduleKeepAlive()
-            limit = scheduler.after(55) { [weak self] in
-                guard let self else { return }
-                if self.source == .mappedButton { self.endMappedVoice(normal: true) }
-                else { self.closeStream(self.streamID); self.finish(normal: true) }
-            }
+            limit = schedule(55) { [weak self] in self?.beginClosing(normal: true) }
         case .audioSync(let codec, let sequence, let predictor, let stepIndex):
             proto.applyAudioSync(codec: codec, sequence: sequence, predictor: predictor, stepIndex: stepIndex)
-        case .audioStop:
-            // A previous physical release can arrive after MIC_OPEN but before its reply.
-            if opening && source == .physical { cancel(); return }
-            guard streaming else { return }
-            finish(normal: closingNormally ?? true)
+        case .audioStop(let reason):
+            if opening { if source == .physical { cancel() }; return }
+            // Only ignore old host-close ACKs during their reply window; an ordinary
+            // physical session without a cancelled host request keeps its old behavior.
+            if case .recording(.physical, let id) = phase, id != 0,
+               proto.capabilities?.version == .v10, reason == 0, now() < mappedRetryAfter { return }
+            switch phase {
+            case .closing(_, _, let normal): finish(normal: normal)
+            case .recording: finish(normal: true)
+            default: break
+            }
         case .micOpenError:
-            guard busy else { return }
-            cancel()
-            onStatus("遥控器暂时未能开启麦克风，请松开后重试")
+            guard opening else { return }
+            cancel(); onStatus("遥控器暂时未能开启麦克风，请松开后重试")
         case .capabilities, .unknown: break
+        }
+    }
+
+    private func beginClosing(normal: Bool) {
+        guard let owner = source else { return }
+        if case .failed = phase { closeStream(streamID); return }
+        if case .closing(_, _, let previous) = phase, previous == normal || !previous {
+            closeStream(streamID); return
+        }
+        let began = streaming, id = streamID
+        stopTimers()
+        phase = .closing(owner, id, normal: normal)
+        awaitStop(retry: true)
+        if !normal && began { proto.endAudioStream(); onEnd(false) }
+        closeStream(id)
+    }
+
+    private func awaitStop(retry: Bool) {
+        after(0.4) { [weak self] in
+            guard let self, case .closing(let owner, let id, _) = self.phase else { return }
+            if retry {
+                self.awaitStop(retry: false); self.closeStream(id)
+            } else {
+                let began = self.streaming
+                self.phase = .failed(owner, id) // retain exact id until Bluetooth disconnects
+                self.ready = false
+                self.proto.endAudioStream()
+                if began { self.onEnd(false) }
+                self.onStatus("关麦未确认，正在断开遥控器语音连接")
+                self.onDisconnect()
+            }
         }
     }
 
     private func closeStream(_ id: UInt8) {
         if let command = try? proto.micCloseCommand(streamID: id) { send(command) }
     }
-
+    private func after(_ delay: TimeInterval, _ action: @escaping () -> Void) {
+        phaseTimer?()
+        phaseTimer = schedule(delay) { [weak self] in self?.phaseTimer = nil; action() }
+    }
     private func scheduleKeepAlive() {
-        guard profile == .chromecast, streaming, closingNormally == nil else { return }
-        keepAlive = scheduler.after(4) { [weak self] in
-            guard let self, self.streaming, self.closingNormally == nil else { return }
+        guard profile == .chromecast, case .recording = phase else { return }
+        keepAlive = schedule(4) { [weak self] in
+            guard let self, case .recording = self.phase else { return }
             if let command = try? self.proto.keepAliveCommand(streamID: self.streamID) { self.send(command) }
             self.scheduleKeepAlive()
         }
     }
-
-    private func rejectLateStarts() {
-        rejectingLateStart = true
-        rejectionTimer?.cancel()
-        rejectionTimer = scheduler.after(1.5) { [weak self] in
-            self?.rejectingLateStart = false
-            self?.rejectionTimer = nil
-        }
+    private func stopTimers() {
+        phaseTimer?(); phaseTimer = nil
+        keepAlive?(); keepAlive = nil
+        limit?(); limit = nil
     }
-
     private func finish(normal: Bool) {
-        responseTimer?.cancel(); responseTimer = nil
-        firstAudioTimer?.cancel(); firstAudioTimer = nil
-        keepAlive?.cancel(); keepAlive = nil
-        limit?.cancel(); limit = nil
-        closeTimer?.cancel(); closeTimer = nil
         let began = streaming
-        streaming = false; opening = false; source = nil; closingNormally = nil; streamID = 0
-        proto.endAudioStream()
+        stopTimers(); phase = .idle; proto.endAudioStream()
         if began { onEnd(normal) }
     }
 }

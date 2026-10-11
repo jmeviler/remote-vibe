@@ -92,3 +92,9 @@ UI 和状态文字通过 `Sources/App/Localization.swift` 读取原生 `.strings
 `ReleaseUpdate.swift` 仅解析正式发布版本和可下载 App 包，网络请求仍由菜单按钮触发。`zsh Tests/test-app-support.sh` 验证语言资源和版本比较。
 
 Codex CLI 使用已有键盘事件路径，新增数字键和 Ctrl+C/G/O/R 预设。方向、Enter、Esc、Tab、Shift+Tab 和自定义组合键已在动作库；不自动覆盖用户键位。具体用途依赖当前终端界面与 Codex 版本，可在 Codex 的 `/keymap` 查看或修改其绑定。官方参考：[交互快捷键](https://learn.chatgpt.com/docs/developer-commands?surface=cli#interactive-shortcuts)。
+
+## 0.4.4：墨绿色按钮与快捷键入口
+
+按钮、遥控器选中键与动作预览统一采用墨绿色。按钮标题单独绘制，以保证禁用与窗口失焦时的可读性，交互仍由原生控件处理，详见 [视觉检查](DESIGN-REVIEW.md)。
+
+「终端 / Codex CLI」分类增加 `Shift + ←` 入口，发送与「滚动与光标 → 向左选择 · ⇧←」相同的 Shift + Left 组合键。具体用途由当前终端界面决定，不修改已有配置或输入事件路径。

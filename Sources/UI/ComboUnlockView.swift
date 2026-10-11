@@ -9,7 +9,7 @@ final class ComboUnlockView: SettingsPage {
     private let status = NSTextField(wrappingLabelWithString: "")
     private let password = NSSecureTextField()
     private let enabled = NSButton(checkboxWithTitle: L("开启连招解锁"), target: nil, action: nil)
-    private let record = SettingsTheme.button(L("录制连招"), primary: true)
+    private let record = SettingsTheme.button(L("录制连招"))
     private let finish = SettingsTheme.button(L("确认录制"))
     private let practice = SettingsTheme.button(L("练习"))
     private let cancel = SettingsTheme.button(L("结束 / 取消"))
@@ -39,7 +39,7 @@ final class ComboUnlockView: SettingsPage {
         for (index, pair) in [(L("录制"), L("输入 8–16 次按键，并重复确认。")), (L("验证"), L("在本机锁屏界面完成手动测试。")), (L("开启"), L("验证成功后，由你决定是否启用。"))].enumerated() {
             let y = CGFloat(254 + index * 82)
             place(SettingsTheme.eyebrow("0\(index + 1)", light: true), x: 25, y: y, w: 30, h: 18)
-            place(SettingsTheme.label(pair.0, size: 15, weight: .medium, color: SettingsTheme.accent), x: 63, y: y - 2, w: 180, h: 23)
+            place(SettingsTheme.label(pair.0, size: 15, weight: .medium, color: SettingsTheme.paper), x: 63, y: y - 2, w: 180, h: 23)
             let description = NSTextField(wrappingLabelWithString: pair.1)
             description.font = .systemFont(ofSize: 11); description.textColor = SettingsTheme.color(0xBBC8B7)
             place(description, x: 63, y: y + 29, w: 195, h: 30)

@@ -1,9 +1,8 @@
-简体中文 / English · Apple Silicon · macOS 15+
+Remote Vibe 0.4.4 · 简体中文 / English · Apple Silicon · macOS 15+
 
-- 新增使用就绪提示，区分模拟 Fn 与开启遥控器麦克风。
-- 新增 Codex CLI 常用组合键和数字键预设，保留已有映射。
-- 界面支持简体中文与英文，跟随系统语言。
-- 菜单栏显示版本，可手动检查正式发布版本。
+- 操作按钮、遥控器选中键与动作预览统一为墨绿色，使用白字或白色图标。
+- 修复按钮文字过浅的问题，禁用、按下和窗口失焦时仍可辨认；清除操作用深红色区分。
+- 「终端 / Codex CLI」分类新增 `Shift + ←` 快捷键入口，沿用现有组合键能力与配置。
 
 **下载选择**
 
@@ -15,7 +14,7 @@
 
 ---
 
-Readiness guidance, clearer Fn/microphone actions, Codex CLI shortcut presets, English/Simplified Chinese UI, and manual release checking. Existing mappings are preserved.
+Buttons, selected remote keys and action previews now share a forest-green style with white text or icons. Button labels remain readable when disabled, pressed or in an inactive window; destructive actions use dark red. `Shift + Left` is now also available in the Terminal / Codex CLI category. Existing mappings are preserved.
 
 **Downloads:** use `Mac-AppleSilicon.zip` for first setup with the voice component, or `App-AppleSilicon.zip` to replace only the app after quitting and backing it up. The app-only update does not restart system audio. Verify downloads with `SHA256SUMS.txt`.
 

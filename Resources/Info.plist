@@ -8,8 +8,8 @@
 <key>CFBundleExecutable</key><string>RemoteVibe</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundleVersion</key><string>12</string>
-<key>CFBundleShortVersionString</key><string>0.4.3</string>
+<key>CFBundleVersion</key><string>13</string>
+<key>CFBundleShortVersionString</key><string>0.4.4</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>LSUIElement</key><true/>
 <key>NSBluetoothAlwaysUsageDescription</key><string>接收 Google Chromecast 和小米 RC003 遥控器自带麦克风的语音。</string>

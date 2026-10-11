@@ -32,7 +32,8 @@ private final class RemoteKeyButton: NSButton {
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow(); shadow.shadowColor = NSColor.black.withAlphaComponent(0.12)
         shadow.shadowOffset = NSSize(width: 0, height: -1); shadow.shadowBlurRadius = 2; shadow.set()
-        let fill = selected || isHighlighted ? SettingsTheme.accent : hovered ? SettingsTheme.color(0xEEF4E4) : SettingsTheme.color(0xFAFBF6)
+        let emphasized = selected || isHighlighted
+        let fill = emphasized ? SettingsTheme.forest : hovered ? SettingsTheme.line : SettingsTheme.color(0xFAFBF6)
         fill.setFill(); shape.fill()
         NSGraphicsContext.restoreGraphicsState()
         (selected ? SettingsTheme.forest : SettingsTheme.color(0xC9D0C3)).setStroke()
@@ -41,9 +42,9 @@ private final class RemoteKeyButton: NSButton {
                        "↩":"arrow.uturn.backward", L("语音"):"mic.fill", L("主页"):"house", L("静音"):"speaker.slash",
                        L("电源"):"power", L("信源"):"rectangle.on.rectangle", L("菜单"):"line.3.horizontal", "＋":"plus", "−":"minus"]
         if let symbol = symbols[title] {
-            SettingsTheme.symbol(symbol, in: NSRect(x: rect.midX - 9, y: rect.midY - 9, width: 18, height: 18))
+            SettingsTheme.symbol(symbol, in: NSRect(x: rect.midX - 9, y: rect.midY - 9, width: 18, height: 18), onDark: emphasized)
         } else {
-            let attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: SettingsTheme.ink]
+            let attributes: [NSAttributedString.Key: Any] = [.font: font ?? NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: emphasized ? NSColor.white : SettingsTheme.ink]
             let size = (title as NSString).size(withAttributes: attributes)
             (title as NSString).draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2), withAttributes: attributes)
         }
@@ -93,7 +94,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     private let chooseAppButton = SettingsTheme.button(L("选择应用…"))
     private let modifierLabel = NSTextField(labelWithString: L("组合键（可多选）"))
     private let hint = NSTextField(wrappingLabelWithString: "")
-    private let saveButton = SettingsTheme.button(L("保存并生效"), primary: true)
+    private let saveButton = SettingsTheme.button(L("保存并生效"))
     private let resetButton = SettingsTheme.button(L("恢复此键默认"))
     private let permissionButton = SettingsTheme.button(L("允许按键控制"))
     private let liveStatus = NSTextField(wrappingLabelWithString: "")

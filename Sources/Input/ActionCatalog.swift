@@ -30,6 +30,7 @@ enum ActionCatalog {
         key(L("终端 / Codex CLI"), L("编辑提示词 · ⌃G"), 0x0A, .maskControl),
         key(L("终端 / Codex CLI"), L("复制 Codex 上次输出 · ⌃O"), 0x12, .maskControl),
         key(L("终端 / Codex CLI"), L("搜索输入历史 · ⌃R"), 0x15, .maskControl),
+        key(L("终端 / Codex CLI"), "Shift + ←", 0x50, .maskShift),
         key(L("终端 / Codex CLI"), L("数字 1"), 0x1E),
         key(L("终端 / Codex CLI"), L("数字 2"), 0x1F),
         key(L("终端 / Codex CLI"), L("数字 3"), 0x20),

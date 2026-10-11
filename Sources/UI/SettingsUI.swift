@@ -1,5 +1,21 @@
 import AppKit
 
+private final class SettingsButtonCell: NSButtonCell {
+    override func drawTitle(_ title: NSAttributedString, withFrame frame: NSRect, in controlView: NSView) -> NSRect {
+        // Bordered buttons ignore contentTintColor, and AppKit replaces disabled title colors.
+        // Keep the native bezel, sizing and interaction; draw only the title with readable colors.
+        let text = NSMutableAttributedString(attributedString: title)
+        // Native tinted bezels become neutral when their window is inactive.
+        let active = NSApp.isActive && controlView.window?.isKeyWindow == true
+        let color = active ? (isEnabled ? NSColor.white : SettingsTheme.paper) :
+            (isEnabled ? SettingsTheme.ink : SettingsTheme.secondary)
+        text.addAttribute(.foregroundColor, value: color,
+                          range: NSRange(location: 0, length: text.length))
+        text.draw(in: frame)
+        return frame
+    }
+}
+
 enum SettingsTheme {
     static func color(_ hex: UInt32) -> NSColor {
         NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255, green: CGFloat((hex >> 8) & 255) / 255,
@@ -10,10 +26,10 @@ enum SettingsTheme {
     static let ink = color(0x202923)
     static let secondary = color(0x667169)
     static let line = color(0xDFE3DA)
-    static let accent = color(0xD4EF87)
     static let forest = color(0x344936)
     static let stage = color(0x202B25)
     static let error = color(0xA3422C)
+    static let destructiveFill = color(0x843727)
 
     static func label(_ text: String, size: CGFloat = 12, weight: NSFont.Weight = .regular,
                       color: NSColor = secondary) -> NSTextField {
@@ -37,29 +53,33 @@ enum SettingsTheme {
     }
 
     static func button(_ title: String, target: AnyObject? = nil, action: Selector? = nil,
-                       primary: Bool = false, destructive: Bool = false) -> NSButton {
-        let button = NSButton(title: title, target: target, action: action)
+                       destructive: Bool = false) -> NSButton {
+        let button = NSButton(frame: .zero)
+        let cell = SettingsButtonCell(textCell: title)
+        button.cell = cell
+        button.setButtonType(.momentaryPushIn)
+        button.target = target; button.action = action
         button.bezelStyle = .rounded
         button.font = .systemFont(ofSize: 12, weight: .semibold)
-        button.bezelColor = primary ? forest : paper
-        button.contentTintColor = destructive ? error : primary ? accent : ink
+        button.bezelColor = destructive ? destructiveFill : forest
         return button
     }
 
-    // Only the fixed app symbols use this cache, all with the same size and tint.
+    // Cache the fixed app symbols in dark and light variants for their backgrounds.
     private static var symbols: [String: NSImage] = [:]
-    static func symbol(_ name: String, in rect: NSRect) {
-        if symbols[name] == nil {
+    static func symbol(_ name: String, in rect: NSRect, onDark: Bool = false) {
+        let key = name + (onDark ? "/light" : "/dark")
+        if symbols[key] == nil {
             guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 16, weight: .medium)) else { return }
             let tinted = NSImage(size: image.size)
             tinted.lockFocus()
             image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
-            ink.setFill(); NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop)
+            (onDark ? NSColor.white : ink).setFill(); NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop)
             tinted.unlockFocus()
-            symbols[name] = tinted
+            symbols[key] = tinted
         }
-        guard let image = symbols[name] else { return }
+        guard let image = symbols[key] else { return }
         let factor = min(rect.width / image.size.width, rect.height / image.size.height)
         let size = NSSize(width: image.size.width * factor, height: image.size.height * factor)
         image.draw(in: NSRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
@@ -178,8 +198,8 @@ final class ActionPreview: SettingsPanel {
                 }
             }
             let disc = NSBezierPath(roundedRect: NSRect(x: 18, y: 27, width: 53, height: 53), xRadius: 16, yRadius: 16)
-            SettingsTheme.accent.setFill(); disc.fill()
-            SettingsTheme.symbol(symbol, in: NSRect(x: 33, y: 42, width: 23, height: 23))
+            SettingsTheme.forest.setFill(); disc.fill()
+            SettingsTheme.symbol(symbol, in: NSRect(x: 33, y: 42, width: 23, height: 23), onDark: true)
             text(title, at: NSPoint(x: 88, y: 32), size: 17, color: SettingsTheme.ink)
             text(detail, at: NSPoint(x: 88, y: 66), size: 11, color: SettingsTheme.secondary)
         }

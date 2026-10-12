@@ -46,7 +46,7 @@ enum DesignPreview {
         _ = NSApplication.shared; NSApp.setActivationPolicy(.prohibited)
         let empty = try JSONEncoder().encode(KeyMapping.Bindings())
         var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        for profile in RemoteProfile.allCases { arguments[profile.mappingKey] = empty }
+        for profile in RemoteProfile.allCases { arguments[profile.mappingKey] = empty; arguments[profile.mouseMappingKey] = empty }
         UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
         let directory = URL(fileURLWithPath: "build/design/" + (CommandLine.arguments.dropFirst().first ?? "review"), isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -86,7 +86,7 @@ enum DesignPreview {
             try capture(shell, name: profile.rawValue + "-wide", directory: directory)
             resize(1080)
             let controls = descendants(view)
-            let triggers = controls.compactMap { $0 as? NSSegmentedControl }.first!
+            let triggers = controls.compactMap { $0 as? NSSegmentedControl }.first { $0.action == NSSelectorFromString("triggerChanged") }!
             let actions = controls.compactMap { $0 as? NSPopUpButton }.first { $0.action == NSSelectorFromString("actionChanged") }!
             func choose(_ title: String) { actions.selectItem(withTitle: title); change(actions) }
             triggers.selectedSegment = 1; change(triggers)

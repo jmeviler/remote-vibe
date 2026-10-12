@@ -444,3 +444,32 @@
 "发现 %@，下载包尚未就绪" = "Found %@; download is not ready yet";
 "可下载新版本 %@ · 打开发布页" = "Update %@ available · Open releases";
 "GitHub 暂时限流，请稍后重试或打开发布页" = "GitHub rate limit reached. Try later or open the releases page.";
+
+/* Mouse mode */
+"切换鼠标模式" = "Toggle mouse mode";
+"单击移动需要按住连续响应；请将移动放到长按，或取消双击和长按。" = "Movement on single press needs immediate holding. Use a long press, or remove double and long press actions.";
+"单击进入鼠标模式，再按此键退出；松开所有键后切换。\n在左侧“鼠标键位”中独立配置移动和点击。" = "Press to enter mouse mode; press again to exit after all keys are released.\nEdit movement and clicks separately under Mouse bindings.";
+"双击不支持持续移动；请将移动放到单击或长按。" = "Continuous movement needs a single or long press, not a double click.";
+"在当前指针位置点击一次" = "Click once at the current pointer position";
+"在指针当前位置点击一次，按住不会重复点击。\n连续按两次左键可双击。" = "Click once at the pointer; holding does not repeat.\nPress left click twice in quick succession to double-click.";
+"按一次进入，再按一次退出" = "Press once to enter, again to exit";
+"按住持续移动，松开停止" = "Hold to move; release to stop";
+"按住持续移动，松开立即停止；长按移动逐渐加速。\n可同时按两个方向斜向移动。" = "Hold to move with gradual acceleration; release to stop.\nHold two directions to move diagonally.";
+"普通键位" = "Normal bindings";
+"模式切换请单独设为单击，并清除该键的双击和长按。" = "Use single press alone for mode switching; clear double and long press actions on this key.";
+"独立鼠标键位 · 切换键在普通键位设置" = "Mouse bindings / Set the toggle in Normal bindings";
+"要编辑的模式" = "Bindings to edit";
+"这是进入和退出鼠标模式的同一个按键。\n请在“普通键位”中修改，鼠标键位会自动保留它。" = "This key both enters and exits mouse mode.\nChange it under Normal bindings; it stays available in both modes.";
+"这里只选择要编辑的键位；用遥控器的切换键进入或退出鼠标模式。" = "Choose which bindings to edit here. Use the remote toggle key to enter or exit mouse mode.";
+"退出鼠标模式" = "Exit mouse mode";
+"选择按键，可将动作设为“切换鼠标模式”" = "Choose a key and assign Toggle mouse mode";
+"遥控语音 · 鼠标" = "Remote Voice · Mouse";
+"鼠标右键点击" = "Mouse right click";
+"鼠标向上移动" = "Move pointer up";
+"鼠标向下移动" = "Move pointer down";
+"鼠标向右移动" = "Move pointer right";
+"鼠标向左移动" = "Move pointer left";
+"鼠标左键点击" = "Mouse left click";
+"鼠标模式" = "Mouse mode";
+"鼠标模式已开启 · 再按切换键退出" = "Mouse mode is on · Press the toggle key to exit";
+"鼠标键位" = "Mouse bindings";

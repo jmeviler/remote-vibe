@@ -9,6 +9,8 @@ enum RemoteProfile: String, CaseIterable {
     var productID: Int { self == .chromecast ? 0x9450 : 0x32B8 }
     var mappingKey: String { self == .chromecast ? "keyMappings.v1" : "keyMappings.xiaomiRC003.v1" }
 
+    var mouseMappingKey: String { mappingKey + ".mouse" }
+
     func accepts(name: String?) -> Bool {
         guard let name else { return false }
         let normalized = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

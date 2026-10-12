@@ -8,7 +8,7 @@ enum ButtonGestureUITest {
         NSApp.setActivationPolicy(.prohibited)
         let empty = try JSONEncoder().encode(KeyMapping.Bindings())
         var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        for profile in RemoteProfile.allCases { arguments[profile.mappingKey] = empty }
+        for profile in RemoteProfile.allCases { arguments[profile.mappingKey] = empty; arguments[profile.mouseMappingKey] = empty }
         UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
         for profile in RemoteProfile.allCases { try check(profile) }
         print("PASS [\(Bundle.main.preferredLocalizations.joined(separator: ","))]: both settings layouts, per-trigger drafts, text, Fn, validation, reset and fixed voice button (no HID or preference writes).")
@@ -27,7 +27,7 @@ enum ButtonGestureUITest {
         let window = NSWindow(contentRect: view.bounds, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = view
         let all = descendants(view)
-        let trigger = all.compactMap { $0 as? NSSegmentedControl }.first!
+        let trigger = all.compactMap { $0 as? NSSegmentedControl }.first { $0.action == NSSelectorFromString("triggerChanged") }!
         let action = all.compactMap { $0 as? NSPopUpButton }.first { $0.action == NSSelectorFromString("actionChanged") }!
         let editor = all.compactMap { $0 as? NSTextView }.first!
         let save = all.compactMap { $0 as? NSButton }.first { $0.title == L("保存并生效") }!
@@ -132,6 +132,51 @@ enum ButtonGestureUITest {
             precondition(voiceItem.isEnabled && action.titleOfSelectedItem == L("遥控器麦克风（长按后开麦）"))
         }
         change(reset)
+        selectTrigger(0)
+        selectButton(10)
+        choose(L("切换鼠标模式"))
+        let modes = all.compactMap { $0 as? NSSegmentedControl }.first { $0.action == NSSelectorFromString("modeChanged") }!
+        func selectMode(_ mouse: Bool) { modes.selectedSegment = mouse ? 1 : 0; change(modes) }
+        selectMode(true)
+        precondition(action.titleOfSelectedItem == L("切换鼠标模式") && !action.isEnabled && !reset.isEnabled)
+        selectButton(3)
+        precondition(action.titleOfSelectedItem == L("鼠标向上移动") && action.isEnabled)
+        choose(L("鼠标向右移动"))
+        selectButton(7)
+        precondition(action.titleOfSelectedItem == L("鼠标左键点击"))
+        choose(L("鼠标右键点击"))
+        selectButton(11)
+        precondition(action.titleOfSelectedItem == L("鼠标右键点击"))
+        selectMode(false)
+        selectButton(3)
+        precondition(action.titleOfSelectedItem != L("鼠标向右移动"))
+        selectMode(true)
+        precondition(action.titleOfSelectedItem == L("鼠标向右移动"))
+        selectButton(7)
+        precondition(action.titleOfSelectedItem == L("鼠标右键点击"))
+        change(reset)
+        precondition(action.titleOfSelectedItem == L("鼠标左键点击"))
+        selectButton(3)
+        selectTrigger(1)
+        choose(L("鼠标左键点击"))
+        precondition(!save.isEnabled) // Continuous single-press movement cannot wait for a double click.
+        selectTrigger(0)
+        choose(L("不执行"))
+        precondition(save.isEnabled)
+        selectMode(false)
+        selectButton(10)
+        change(reset)
+        selectMode(true)
+        precondition(action.isEnabled && !action.titleOfSelectedItem!.contains(L("切换鼠标模式")))
+        for width: CGFloat in [852, 1024, 1224] {
+            view.setFrameSize(NSSize(width: width, height: 574))
+            view.layoutSubtreeIfNeeded()
+            precondition(modes.frame.maxX <= modes.superview!.bounds.width)
+            for segment in 0..<modes.segmentCount {
+                let textWidth = (modes.label(forSegment: segment)! as NSString).size(withAttributes: [.font: modes.font!]).width
+                precondition(textWidth + 20 < modes.bounds.width / 2)
+            }
+        }
         selectButton(0)
         precondition(!trigger.isEnabled && !action.isEnabled && !reset.isEnabled)
         precondition(mapping.bindings.isEmpty && !mapping.listening)

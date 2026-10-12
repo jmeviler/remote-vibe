@@ -146,6 +146,7 @@ enum ButtonGestureTest {
         early.apply(early.recognizer.timeout(7, trigger: .longPress, at: 1))
         early.expect([.longPress])
 
+        try MouseModeTests.run()
         try configurations()
         try actions()
         reports()

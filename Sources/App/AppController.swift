@@ -50,6 +50,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         buildUI()
         updateRemoteUI()
         mapping.onDeviceChange = { [weak self] in self?.refresh() }
+        mapping.onMouseModeChange = { [weak self] in
+            guard let self else { return }
+            self.mappingView.refreshStatus()
+            self.updateStatusTitle()
+            self.writeStatus()
+        }
         mapping.onFnChange = { [weak self] in self?.refreshReadiness(); self?.writeStatus() }
         mapping.canPerform = { [weak self] in
             guard let self else { return false }
@@ -160,7 +166,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
                         self.updateDiscoveryButton()
                         self.completedSessions += 1
                         self.refreshReadiness()
-                        self.item.button?.title = L("遥控语音")
+                        self.updateStatusTitle()
                         self.message.stringValue = L("本次语音已结束；可以继续按住语音键说话。")
                         self.writeStatus()
                     }
@@ -179,8 +185,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         scheduleMaintenance()
         remotePicker.isEnabled = true
         updateDiscoveryButton()
-        item.button?.title = L("遥控语音")
+        updateStatusTitle()
         refreshReadiness(); writeStatus()
+    }
+
+    private func updateStatusTitle() {
+        item.button?.title = active ? L("● 语音") : mapping.mouseModeActive ? L("遥控语音 · 鼠标") : L("遥控语音")
     }
 
     private func refresh() {
@@ -258,11 +268,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         mainMenu.addItem(withTitle: L("编辑"), action: nil, keyEquivalent: "").submenu = editMenu
         NSApplication.shared.mainMenu = mainMenu
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = L("遥控语音")
+        updateStatusTitle()
         let menu = NSMenu()
         menu.addItem(withTitle: "Remote Vibe \(version) (\(build))", action: nil, keyEquivalent: "")
         menu.addItem(withTitle: L("打开遥控语音"), action: #selector(show), keyEquivalent: "")
         menu.addItem(withTitle: L("立即结束本次语音"), action: #selector(stopVoice), keyEquivalent: "")
+        menu.addItem(withTitle: L("退出鼠标模式"), action: #selector(exitMouseMode), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: L("检查更新…"), action: #selector(checkForUpdates), keyEquivalent: "")
         updateStatus.isHidden = true
@@ -372,7 +383,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        menuItem.action != #selector(checkForUpdates) || updateCheck == nil
+        if menuItem.action == #selector(exitMouseMode) { return mapping.mouseModeActive }
+        return menuItem.action != #selector(checkForUpdates) || updateCheck == nil
     }
 
     @objc private func checkForUpdates() {
@@ -419,6 +431,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             updateStatus.isHidden = false; updateStatus.title = L("无法打开浏览器，请手动访问 GitHub 项目")
         }
     }
+    @objc private func exitMouseMode() { mapping.exitMouseMode(); mappingView.refreshStatus(); writeStatus() }
+
     @objc private func stopVoice() { mapping.suspendActions(); remote.cancelVoice(); abort() }
     @objc private func quit() { NSApplication.shared.terminate(nil) }
 
@@ -438,6 +452,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             "bluetoothScanStarts": remote.scanStarts,
             "mappedVoiceHeld": mapping.mappedVoiceHeld, "mappedVoiceActive": remote.mappedVoiceActive, "voiceBusy": remote.voiceBusy,
             "xiaomiVoiceKeyReady": xiaomiVoiceKey.ready, "xiaomiVoiceKeyStatus": xiaomiVoiceKey.status,
+            "mouseModeActive": mapping.mouseModeActive,
             "keyMappingStatus": mapping.status, "keyMappingConnected": mapping.connected,
             "inputMonitoring": mapping.listeningAllowed,
             "shortcutListener": mapping.listening,
@@ -459,6 +474,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         workspaceObservers.removeAll()
         mapping.onDeviceChange = nil
         mapping.onFnChange = nil
+        mapping.onMouseModeChange = nil
         poll?.invalidate(); unlock.stop(); mapping.stop(); remote.shutdown(); xiaomiVoiceKey.stop(); abort(); mic.stop()
     }
 }

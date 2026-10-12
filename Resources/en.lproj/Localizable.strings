@@ -457,7 +457,7 @@
 "按住持续移动，松开立即停止；长按移动逐渐加速。\n可同时按两个方向斜向移动。" = "Hold to move with gradual acceleration; release to stop.\nHold two directions to move diagonally.";
 "普通键位" = "Normal bindings";
 "模式切换请单独设为单击，并清除该键的双击和长按。" = "Use single press alone for mode switching; clear double and long press actions on this key.";
-"独立鼠标键位 · 切换键在普通键位设置" = "Mouse bindings / Set the toggle in Normal bindings";
+"独立鼠标键位 · 切换键在普通键位设置" = "Mouse bindings / Toggle set in Normal";
 "要编辑的模式" = "Bindings to edit";
 "这是进入和退出鼠标模式的同一个按键。\n请在“普通键位”中修改，鼠标键位会自动保留它。" = "This key both enters and exits mouse mode.\nChange it under Normal bindings; it stays available in both modes.";
 "这里只选择要编辑的键位；用遥控器的切换键进入或退出鼠标模式。" = "Choose which bindings to edit here. Use the remote toggle key to enter or exit mouse mode.";

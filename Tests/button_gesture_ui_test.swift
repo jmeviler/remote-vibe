@@ -8,7 +8,7 @@ enum ButtonGestureUITest {
         NSApp.setActivationPolicy(.prohibited)
         let empty = try JSONEncoder().encode(KeyMapping.Bindings())
         var arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        for profile in RemoteProfile.allCases { arguments[profile.mappingKey] = empty }
+        for profile in RemoteProfile.allCases { arguments[profile.mappingKey] = empty; arguments[profile.mouseMappingKey] = empty }
         UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
         for profile in RemoteProfile.allCases { try check(profile) }
         print("PASS [\(Bundle.main.preferredLocalizations.joined(separator: ","))]: both settings layouts, per-trigger drafts, text, Fn, validation, reset and fixed voice button (no HID or preference writes).")
@@ -27,13 +27,15 @@ enum ButtonGestureUITest {
         let window = NSWindow(contentRect: view.bounds, styleMask: [.titled], backing: .buffered, defer: false)
         window.contentView = view
         let all = descendants(view)
-        let trigger = all.compactMap { $0 as? NSSegmentedControl }.first!
+        let trigger = all.compactMap { $0 as? NSSegmentedControl }.first { $0.action == NSSelectorFromString("triggerChanged") }!
         let action = all.compactMap { $0 as? NSPopUpButton }.first { $0.action == NSSelectorFromString("actionChanged") }!
         let editor = all.compactMap { $0 as? NSTextView }.first!
         let save = all.compactMap { $0 as? NSButton }.first { $0.title == L("保存并生效") }!
         let reset = all.compactMap { $0 as? NSButton }.first { $0.title == L("恢复此键默认") }!
         func choose(_ title: String) {
             precondition(action.itemTitles.contains(title))
+            let item = action.itemArray.first { !$0.isSectionHeader && $0.title == title }!
+            precondition(item.isEnabled && !item.isHidden, "User cannot select disabled/hidden action: \(title)")
             action.selectItem(withTitle: title); change(action)
         }
         func selectTrigger(_ index: Int) { trigger.selectedSegment = index; change(trigger) }
@@ -43,6 +45,35 @@ enum ButtonGestureUITest {
             }!
             change(button)
         }
+        let modes = all.compactMap { $0 as? NSSegmentedControl }.first { $0.action == NSSelectorFromString("modeChanged") }!
+        func selectMode(_ mouse: Bool) { modes.selectedSegment = mouse ? 1 : 0; change(modes) }
+        let toggleItem = action.itemArray.first { !$0.isSectionHeader && $0.title == L("切换鼠标模式") }!
+        precondition(action.itemArray.first { !$0.isSectionHeader && !$0.isSeparatorItem } === toggleItem)
+        for gesture in 0..<3 {
+            selectTrigger(gesture)
+            precondition(toggleItem.isEnabled && !toggleItem.isHidden, "Mouse toggle must be selectable for every normal-mode gesture")
+            choose(L("切换鼠标模式"))
+            precondition(save.isEnabled)
+            selectMode(true)
+            selectTrigger(gesture)
+            precondition(!action.isEnabled && trigger.isEnabled && action.titleOfSelectedItem == L("切换鼠标模式"))
+            selectMode(false)
+            selectTrigger(gesture)
+            precondition(action.isEnabled && action.titleOfSelectedItem == L("切换鼠标模式"))
+            change(reset)
+        }
+        // Existing user keys often already have a double-click shortcut.
+        // Choosing a single-click toggle must remain selectable and saveable.
+        selectTrigger(1)
+        choose(L("复制 · ⌘C"))
+        selectTrigger(0)
+        choose(L("切换鼠标模式"))
+        precondition(save.isEnabled)
+        selectMode(true)
+        selectTrigger(1)
+        precondition(action.titleOfSelectedItem == L("复制 · ⌘C") && !action.isEnabled)
+        selectMode(false)
+        change(reset)
         selectTrigger(1)
         precondition(action.titleOfSelectedItem == L("未设置"))
         precondition(action.itemArray.first { $0.tag == 2 && !$0.isSectionHeader }?.isEnabled == false)
@@ -132,6 +163,49 @@ enum ButtonGestureUITest {
             precondition(voiceItem.isEnabled && action.titleOfSelectedItem == L("遥控器麦克风（长按后开麦）"))
         }
         change(reset)
+        selectTrigger(0)
+        selectButton(10)
+        choose(L("切换鼠标模式"))
+        selectMode(true)
+        precondition(action.titleOfSelectedItem == L("切换鼠标模式") && !action.isEnabled && !reset.isEnabled)
+        selectButton(3)
+        precondition(action.titleOfSelectedItem == L("鼠标向上移动") && action.isEnabled)
+        choose(L("鼠标向右移动"))
+        selectButton(7)
+        precondition(action.titleOfSelectedItem == L("鼠标左键点击"))
+        choose(L("鼠标右键点击"))
+        selectButton(11)
+        precondition(action.titleOfSelectedItem == L("鼠标右键点击"))
+        selectMode(false)
+        selectButton(3)
+        precondition(action.titleOfSelectedItem != L("鼠标向右移动"))
+        selectMode(true)
+        precondition(action.titleOfSelectedItem == L("鼠标向右移动"))
+        selectButton(7)
+        precondition(action.titleOfSelectedItem == L("鼠标右键点击"))
+        change(reset)
+        precondition(action.titleOfSelectedItem == L("鼠标左键点击"))
+        selectButton(3)
+        selectTrigger(1)
+        choose(L("鼠标左键点击"))
+        precondition(!save.isEnabled) // Continuous single-press movement cannot wait for a double click.
+        selectTrigger(0)
+        choose(L("不执行"))
+        precondition(save.isEnabled)
+        selectMode(false)
+        selectButton(10)
+        change(reset)
+        selectMode(true)
+        precondition(action.isEnabled && !action.titleOfSelectedItem!.contains(L("切换鼠标模式")))
+        for width: CGFloat in [852, 1024, 1224] {
+            view.setFrameSize(NSSize(width: width, height: 574))
+            view.layoutSubtreeIfNeeded()
+            precondition(modes.frame.maxX <= modes.superview!.bounds.width)
+            for segment in 0..<modes.segmentCount {
+                let textWidth = (modes.label(forSegment: segment)! as NSString).size(withAttributes: [.font: modes.font!]).width
+                precondition(textWidth + 20 < modes.bounds.width / 2)
+            }
+        }
         selectButton(0)
         precondition(!trigger.isEnabled && !action.isEnabled && !reset.isEnabled)
         precondition(mapping.bindings.isEmpty && !mapping.listening)

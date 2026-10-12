@@ -9,7 +9,7 @@ xcrun swiftc -swift-version 5 -parse-as-library -O -target arm64-apple-macos15.0
   Sources/Bluetooth/ATVVProtocol.swift Sources/Audio/ADPCMDecoder.swift Sources/Bluetooth/ATVVError.swift \
   Sources/App/Localization.swift Sources/Bluetooth/RemoteProfile.swift Sources/Audio/RemoteAudioSession.swift Sources/Bluetooth/BluetoothRemote.swift Sources/Bluetooth/RemoteController.swift Sources/Input/XiaomiVoiceKeyOverride.swift \
   Sources/Input/FnKey.swift Sources/Audio/VirtualMicrophone.swift \
-  Sources/Input/DesktopActions.swift Sources/Input/ClipboardPaste.swift Sources/Input/ButtonGesture.swift Sources/Input/ActionCatalog.swift Sources/Input/KeyMapping.swift Sources/UI/SettingsUI.swift Sources/UI/KeyMappingView.swift \
+  Sources/Input/MousePointer.swift Sources/Input/DesktopActions.swift Sources/Input/ClipboardPaste.swift Sources/Input/ButtonGesture.swift Sources/Input/ActionCatalog.swift Sources/Input/KeyMapping.swift Sources/UI/SettingsUI.swift Sources/UI/KeyMappingView.swift \
   Sources/Unlock/ComboUnlock.swift Sources/UI/ComboUnlockView.swift Sources/App/ReleaseUpdate.swift Sources/App/AppController.swift \
   -o "$app/Contents/MacOS/RemoteVibe"
 cp Resources/Info.plist "$app/Contents/Info.plist"

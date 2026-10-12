@@ -54,6 +54,7 @@ struct ButtonAction: Codable, Equatable {
     enum Kind: String, Codable {
         case original, disabled, key, scrollUp, scrollDown, scrollLeft, scrollRight
         case nextDisplay, nextWindow, text, systemKey, openApp, openURL, remoteVoice
+        case toggleMouseMode, mouseUp, mouseDown, mouseLeft, mouseRight, mouseLeftClick, mouseRightClick
     }
     var kind: Kind
     var usage: UInt64 = 0x28
@@ -62,10 +63,12 @@ struct ButtonAction: Codable, Equatable {
     var appPath: String?
     var url: String?
     var isFn: Bool { kind == .key && usage == MappingKey.fnUsage }
-    var requiresHold: Bool { isFn || kind == .remoteVoice }
+    var isMouseMovement: Bool { [.mouseUp, .mouseDown, .mouseLeft, .mouseRight].contains(kind) }
+    var isMouseAction: Bool { isMouseMovement || [.mouseLeftClick, .mouseRightClick].contains(kind) }
+    var requiresHold: Bool { isFn || kind == .remoteVoice || isMouseMovement }
     var isScroll: Bool { [.scrollUp, .scrollDown, .scrollLeft, .scrollRight].contains(kind) }
     var usesListener: Bool {
-        requiresHold || kind == .text || isScroll || kind == .nextDisplay || kind == .nextWindow ||
+        requiresHold || isMouseAction || kind == .toggleMouseMode || kind == .text || isScroll || kind == .nextDisplay || kind == .nextWindow ||
         kind == .systemKey || kind == .openApp || kind == .openURL ||
         (kind == .key && (modifiers != 0 || usage == 0x29))
     }
@@ -91,6 +94,13 @@ struct ButtonAction: Codable, Equatable {
     }
     var title: String {
         switch kind {
+        case .toggleMouseMode: return L("切换鼠标模式")
+        case .mouseUp: return L("鼠标向上移动")
+        case .mouseDown: return L("鼠标向下移动")
+        case .mouseLeft: return L("鼠标向左移动")
+        case .mouseRight: return L("鼠标向右移动")
+        case .mouseLeftClick: return L("鼠标左键点击")
+        case .mouseRightClick: return L("鼠标右键点击")
         case .remoteVoice: return L("遥控器麦克风（按住说话）")
         case .original: return L("原按键功能")
         case .disabled: return L("不执行")
@@ -156,10 +166,14 @@ struct ButtonBinding: Codable, Equatable {
         }
     }
 
+    var togglesMouseMode: Bool { [singleClick, doubleClick, longPress].contains { $0?.kind == .toggleMouseMode } }
+    var immediateMouseToggle: Bool { singleClick.kind == .toggleMouseMode && !hasGestures }
     var hasGestures: Bool { doubleClick != nil || longPress != nil }
     var usesListener: Bool { hasGestures || singleClick.usesListener }
     var validationMessage: String? {
         if let error = [singleClick, doubleClick, longPress].compactMap({ $0?.configurationError }).first { return error }
+        if hasGestures && singleClick.isMouseMovement { return L("单击移动需要按住连续响应；请将移动放到长按，或取消双击和长按。") }
+        if doubleClick?.isMouseMovement == true { return L("双击不支持持续移动；请将移动放到单击或长按。") }
         if hasGestures && singleClick.kind == .original { return L("使用双击或长按前，请为单击选择明确动作（也可选“不执行”）。") }
         if hasGestures && singleClick.isFn { return L("单击 Fn 需要按下即保持；请将 Fn 放到长按，或取消双击和长按。") }
         if hasGestures && singleClick.kind == .remoteVoice { return L("单击遥控器语音需要按下即开麦；请将语音放到长按，或取消双击和长按。") }
@@ -249,6 +263,10 @@ final class KeyMapping {
     }
     private let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
     private let desktop = DesktopActions()
+    private let pointer = MousePointer()
+    private var mouseMode = MouseModeState()
+    var mouseModeActive: Bool { mouseMode.active }
+    var onMouseModeChange: (() -> Void)?
     private let textInput = ClipboardPaste()
     private var actionFeedback: (text: String, until: Date)?
     private var actionGeneration = 0
@@ -283,6 +301,7 @@ final class KeyMapping {
     private let src = "HIDKeyboardModifierMappingSrc"
     private let dst = "HIDKeyboardModifierMappingDst"
     private(set) var bindings: Bindings
+    private(set) var mouseBindings: Bindings
     private(set) var profile: RemoteProfile
     var buttons: [MappedButton] { MappedButton.buttons(for: profile) }
     private(set) var status = L("等待遥控器连接")
@@ -307,14 +326,15 @@ final class KeyMapping {
     init(profile: RemoteProfile = .chromecast) {
         self.profile = profile
         bindings = Self.load(profile)
+        mouseBindings = Self.load(profile, mouse: true)
     }
 
-    private static func load(_ profile: RemoteProfile) -> Bindings {
-        if let data = UserDefaults.standard.data(forKey: profile.mappingKey),
+    private static func load(_ profile: RemoteProfile, mouse: Bool = false) -> Bindings {
+        if let data = UserDefaults.standard.data(forKey: mouse ? profile.mouseMappingKey : profile.mappingKey),
            let stored = try? JSONDecoder().decode(Bindings.self, from: data) {
             return stored.filter { code, b in
                 MappedButton.buttons(for: profile).contains { String($0.code) == code } &&
-                b.validationMessage(for: profile) == nil
+                b.validationMessage(for: profile) == nil && (!mouse || !b.togglesMouseMode)
             }
         } else { return [:] }
     }
@@ -325,14 +345,54 @@ final class KeyMapping {
         capturedButtons.removeAll(); pendingCapture = nil
         self.profile = profile
         bindings = Self.load(profile)
+        mouseBindings = Self.load(profile, mouse: true)
         bindingsRevision += 1; revision += 1
         refresh()
     }
 
-    func binding(_ button: MappedButton) -> ButtonBinding { bindings[String(button.code)] ?? .init(singleClick: button.initial) }
+    func binding(_ button: MappedButton, mouse: Bool = false) -> ButtonBinding {
+        Self.binding(button, normal: bindings, mouse: mouseBindings, inMouseMode: mouse)
+    }
+
+    static func binding(_ button: MappedButton, normal: Bindings, mouse: Bindings, inMouseMode: Bool) -> ButtonBinding {
+        let ordinary = normal[String(button.code)] ?? .init(singleClick: button.initial)
+        // The entry key is also the exit key, regardless of the separate mouse draft.
+        if !inMouseMode || ordinary.togglesMouseMode { return ordinary }
+        return mouse[String(button.code)] ?? .init(singleClick: mouseDefault(button.code))
+    }
+
+    static func mouseDefault(_ code: UInt8) -> ButtonAction {
+        let kinds: [UInt8: ButtonAction.Kind] = [3: .mouseUp, 4: .mouseDown, 5: .mouseLeft, 6: .mouseRight,
+                                               7: .mouseLeftClick, 11: .mouseRightClick]
+        return .init(kind: kinds[code] ?? .original)
+    }
+
+    private func activeBinding(_ button: MappedButton) -> ButtonBinding { binding(button, mouse: mouseMode.active) }
+
+    private func resetMouseMode() {
+        pointer.stop()
+        if mouseMode.reset() { revision += 1; onMouseModeChange?() }
+    }
+
+    func exitMouseMode() {
+        guard mouseMode.active || mouseMode.pending != nil else { return }
+        suspendActions()
+        refresh()
+    }
+
+    private func applyPendingMouseMode() {
+        guard mouseMode.pending != nil, held.isEmpty else { return }
+        guard connected, listenerOK, canPerform(), capturedButtons.isEmpty else { mouseMode.cancelPending(); return }
+        guard mouseMode.applyIfReleased(held) else { return }
+        releaseMappedFn(); releaseMappedVoice(normal: false); cancelRepeats(); cancelPendingActions()
+        revision += 1
+        refresh()
+        onMouseModeChange?()
+    }
 
     func capture(_ codes: Set<UInt8>) {
         guard codes != capturedButtons else { pendingCapture = nil; return }
+        resetMouseMode()
         releaseMappedFn()
         releaseMappedVoice(normal: false)
         cancelPendingActions()
@@ -345,13 +405,18 @@ final class KeyMapping {
         refresh()
     }
 
-    func save(_ values: Bindings) {
-        if let error = values.values.compactMap({ $0.validationMessage(for: profile) }).first { status = error; return }
+    func save(_ values: Bindings, mouse: Bindings? = nil) {
+        let mouseValues = mouse ?? mouseBindings
+        guard !mouseValues.values.contains(where: { $0.togglesMouseMode }) else { return }
+        if let error = (Array(values.values) + Array(mouseValues.values)).compactMap({ $0.validationMessage(for: profile) }).first { status = error; return }
         releaseMappedFn()
         releaseMappedVoice(normal: false)
         cancelPendingActions()
         actionFeedback = nil
+        resetMouseMode()
         bindings = values
+        mouseBindings = mouseValues
+        if let data = try? JSONEncoder().encode(mouseValues) { UserDefaults.standard.set(data, forKey: profile.mouseMappingKey) }
         if let data = try? JSONEncoder().encode(values) { UserDefaults.standard.set(data, forKey: profile.mappingKey) }
         cancelRepeats()
         bindingsRevision += 1
@@ -360,42 +425,43 @@ final class KeyMapping {
     }
 
     func refresh() {
-        let needsListener = !capturedButtons.isEmpty || buttons.contains { binding($0).usesListener }
+        let services = (IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []).filter {
+            (IOHIDServiceClientCopyProperty($0, "VendorID" as CFString) as? NSNumber)?.intValue == profile.vendorID &&
+            (IOHIDServiceClientCopyProperty($0, "ProductID" as CFString) as? NSNumber)?.intValue == profile.productID
+        }
+        let disconnected = connected && services.isEmpty
+        if disconnected { suspendActions() }
+        connected = !services.isEmpty
+        if mouseMode.active && (!listeningAllowed || !AXIsProcessTrusted()) { resetMouseMode() }
+        let needsListener = !capturedButtons.isEmpty || buttons.contains { activeBinding($0).usesListener }
         if needsListener && listeningAllowed && AXIsProcessTrusted() {
             if manager == nil { startListener() }
         } else { stopListener() }
         listenerOK = manager != nil && listeningAllowed && AXIsProcessTrusted()
         let entries: HIDMappings = buttons.compactMap { button in
-            let configuration = binding(button)
+            let configuration = activeBinding(button)
             let value = configuration.singleClick
             guard value.kind != .original || configuration.hasGestures || capturedButtons.contains(button.code) else { return nil }
             // Unassigned usage suppresses a custom key even while permission is missing.
             let target = !capturedButtons.contains(button.code) && value.kind == .key && !configuration.usesListener ? value.usage : 0
             return [src: button.source, dst: (UInt64(7) << 32) | target]
         }
-        let services = (IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []).filter {
-            (IOHIDServiceClientCopyProperty($0, "VendorID" as CFString) as? NSNumber)?.intValue == profile.vendorID &&
-            (IOHIDServiceClientCopyProperty($0, "ProductID" as CFString) as? NSNumber)?.intValue == profile.productID
-        }
-        let disconnected = connected && services.isEmpty
-        if disconnected { cancelPendingActions() }
-        connected = !services.isEmpty
         var present = Set<UInt64>()
         var applied = true
         needsApply = false
         let previousShortcuts = activeShortcuts
-        activeShortcuts = listenerOK ? Set(buttons.filter { binding($0).usesListener }.map { $0.code }).union(capturedButtons) : []
+        activeShortcuts = listenerOK ? Set(buttons.filter { activeBinding($0).usesListener }.map { $0.code }).union(capturedButtons) : []
         for service in services {
             guard let id = (IOHIDServiceClientGetRegistryID(service) as? NSNumber)?.uint64Value else { continue }
             present.insert(id)
             var current = IOHIDServiceClientCopyProperty(service, property) as? HIDMappings ?? []
             var snapshot = snapshots[id] ?? Snapshot(service: service, original: current)
-            // Apply only on connection or explicit save; never fight another remapper.
+            // Apply on connection, save or mode/capture transitions; never fight another remapper.
             if snapshot.revision != revision {
                 if snapshot.bindingsRevision != bindingsRevision {
                     snapshot.conflictedSources.removeAll()
                 } else {
-                    // A temporary capture must not reclaim mappings another tool has changed.
+                    // A mode/capture change must not reclaim mappings another tool has changed.
                     snapshot.conflictedSources.formUnion(snapshot.owned.filter { !current.contains($0) }.compactMap { $0[src] })
                 }
                 snapshot.original = restored(current, snapshot: snapshot)
@@ -422,7 +488,8 @@ final class KeyMapping {
         snapshots = snapshots.filter { present.contains($0.key) }
         status = !connected ? L("设置已保存 · 等待遥控器连接") : !applied ? L("按键设置未能生效，请检查权限") :
             needsApply ? L("按键设置被其他程序更改 · 保存可重新应用") :
-            needsListener && !listenerOK ? L("自定义动作需要输入监控及辅助功能权限") : L("按键已生效 · 重连后自动恢复")
+            needsListener && !listenerOK ? L("自定义动作需要输入监控及辅助功能权限") :
+            mouseMode.active ? L("鼠标模式已开启 · 再按切换键退出") : L("按键已生效 · 重连后自动恢复")
         if connected && applied && !needsApply && (!needsListener || listenerOK),
            let feedback = actionFeedback, feedback.until > Date() { status = feedback.text }
         if disconnected { onInputReset?() }
@@ -478,27 +545,37 @@ final class KeyMapping {
 
     private func handle(_ pressed: Set<UInt8>) {
         let released = held.subtracting(pressed)
-        for code in released { repeats.removeValue(forKey: code)?.invalidate() }
+        for code in released { repeats.removeValue(forKey: code)?.invalidate(); pointer.release(code) }
         let added = pressed.subtracting(held)
         held = pressed
         fnButtons.subtract(released)
         if fnButtons.isEmpty { releaseMappedFn() }
         if let voiceButton, released.contains(voiceButton) { releaseMappedVoice(normal: true) }
         if pressed.isEmpty, let pendingCapture { capture(pendingCapture) }
+        if mouseMode.pending != nil { applyPendingMouseMode(); return }
+        let inputGeneration = actionGeneration
         for code in released.sorted() {
             execute(gestures.release(code, at: ProcessInfo.processInfo.systemUptime))
+            if actionGeneration != inputGeneration { return }
         }
         if !added.isDisjoint(with: capturedButtons), pressed.count > 1 {
             if captureReady { onCapturedPress?(0) }
             return
         }
+        // An immediate toggle takes priority; gesture bindings must still wait for recognition.
+        if capturedButtons.isEmpty, pendingCapture == nil, canPerform(),
+           let toggle = buttons.first(where: { added.contains($0.code) && activeShortcuts.contains($0.code) && activeBinding($0).immediateMouseToggle }) {
+            perform(activeBinding(toggle).singleClick, button: toggle.code)
+            return
+        }
         for code in added.sorted() {
+            if mouseMode.pending != nil { break }
             if capturedButtons.contains(code) {
                 if captureReady { onCapturedPress?(code) }
                 continue
             }
             guard let button = buttons.first(where: { $0.code == code }) else { continue }
-            let configuration = binding(button)
+            let configuration = activeBinding(button)
             guard activeShortcuts.contains(code), canPerform() else { continue }
             if configuration.hasGestures {
                 execute(gestures.press(code, doubleClick: configuration.doubleClick != nil,
@@ -521,7 +598,9 @@ final class KeyMapping {
     }
 
     private func execute(_ commands: [ButtonGestureRecognizer.Command]) {
+        let inputGeneration = actionGeneration
         for command in commands {
+            guard actionGeneration == inputGeneration else { return }
             switch command {
             case let .cancel(code, trigger):
                 gestureTimers.removeValue(forKey: .init(button: code, trigger: trigger))?.invalidate()
@@ -539,7 +618,7 @@ final class KeyMapping {
                 guard connected, listenerOK, listeningAllowed, activeShortcuts.contains(code),
                       capturedButtons.isEmpty, pendingCapture == nil, canPerform(),
                       let button = buttons.first(where: { $0.code == code }),
-                      let value = binding(button)[trigger] else { continue }
+                      let value = activeBinding(button)[trigger] else { continue }
                 // A remapper or disconnect can intervene while a gesture is waiting.
                 // Recheck ownership at delivery without rewriting any HID property.
                 guard !snapshots.isEmpty, snapshots.values.allSatisfy({ snapshot in
@@ -562,7 +641,21 @@ final class KeyMapping {
 
     private func perform(_ value: ButtonAction, button: UInt8, targetPID: pid_t? = nil) {
         guard AXIsProcessTrusted() else { return }
-        if value.kind == .remoteVoice {
+        if value.kind == .toggleMouseMode {
+            guard capturedButtons.isEmpty else { return }
+            cancelRepeats(); cancelPendingActions()
+            mouseMode.requestToggle()
+            applyPendingMouseMode()
+        } else if value.isMouseMovement {
+            guard held.contains(button) else { return }
+            pointer.press(button, direction: value.kind, allowed: { [weak self] in
+                guard let self else { return false }
+                return self.connected && self.listenerOK && self.canPerform() && self.listeningAllowed &&
+                    AXIsProcessTrusted() && self.mouseMode.pending == nil
+            })
+        } else if value.kind == .mouseLeftClick || value.kind == .mouseRightClick {
+            pointer.click(right: value.kind == .mouseRightClick)
+        } else if value.kind == .remoteVoice {
             guard profile == .chromecast, held.contains(button), voiceButton == nil else { return }
             voiceButton = button
             if !onVoicePress() {
@@ -669,6 +762,8 @@ final class KeyMapping {
     // Once paste events are posted, let the short clipboard restore timer finish.
     func cancelPendingActions() {
         actionGeneration += 1
+        pointer.stop()
+        mouseMode.cancelPending()
         desktop.cancel()
         gestureTimers.values.forEach { $0.invalidate() }
         gestureTimers.removeAll()
@@ -676,6 +771,7 @@ final class KeyMapping {
     }
 
     func suspendActions() {
+        resetMouseMode()
         releaseMappedFn(); releaseMappedVoice(normal: false); cancelRepeats(); cancelPendingActions()
     }
 
@@ -695,6 +791,7 @@ final class KeyMapping {
     private func cancelRepeats() { repeats.values.forEach { $0.invalidate() }; repeats.removeAll() }
 
     private func stopListener() {
+        resetMouseMode()
         releaseMappedVoice(normal: false)
         releaseMappedFn()
         if manager != nil { cancelPendingActions() }

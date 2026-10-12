@@ -189,6 +189,9 @@ final class ActionPreview: SettingsPanel {
             else if binding == nil { symbol = "plus"; title = L("为这个手势，留一个位置。"); detail = L("从上方菜单选择一个动作") }
             else {
                 switch binding!.kind {
+                case .toggleMouseMode: symbol = "cursorarrow"; title = binding!.title; detail = L("按一次进入，再按一次退出")
+                case .mouseUp, .mouseDown, .mouseLeft, .mouseRight: symbol = "cursorarrow.motionlines"; title = binding!.title; detail = L("按住持续移动，松开停止")
+                case .mouseLeftClick, .mouseRightClick: symbol = "computermouse"; title = binding!.title; detail = L("在当前指针位置点击一次")
                 case .disabled: symbol = "pause.circle"; title = L("不执行动作"); detail = L("识别这个手势，但不触发操作")
                 case .nextDisplay: symbol = "display.2"; title = L("切换到下一块屏幕"); detail = L("聚焦可见窗口，鼠标随之移入")
                 case .nextWindow: symbol = "macwindow.on.rectangle"; title = L("在窗口之间，轻松流转。"); detail = L("循环切换当前屏幕的可见窗口")

@@ -77,10 +77,17 @@ private final class RemoteDiagram: NSView {
 final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegate {
     override var isFlipped: Bool { true }
     private let mapping: KeyMapping
-    private var drafts: KeyMapping.Bindings
+    private var normalDrafts: KeyMapping.Bindings
+    private var mouseDrafts: KeyMapping.Bindings
+    private var editingMouse: Bool { modePicker.selectedSegment == 1 }
+    private var drafts: KeyMapping.Bindings {
+        get { editingMouse ? mouseDrafts : normalDrafts }
+        set { if editingMouse { mouseDrafts = newValue } else { normalDrafts = newValue } }
+    }
     private var selected: UInt8 = 8
     private var displayedProfile: RemoteProfile
-    private var draftCache: [RemoteProfile: KeyMapping.Bindings] = [:]
+    private var draftCache: [RemoteProfile: (normal: KeyMapping.Bindings, mouse: KeyMapping.Bindings)] = [:]
+    private let modePicker = NSSegmentedControl()
     private let diagram = RemoteDiagram(frame: NSRect(x: 0, y: 0, width: 305, height: 540))
     private let nameLabel = NSTextField(labelWithString: L("静音"))
     private let currentLabel = NSTextField(wrappingLabelWithString: "")
@@ -108,7 +115,8 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
 
     init(mapping: KeyMapping) {
         self.mapping = mapping
-        drafts = mapping.bindings
+        normalDrafts = mapping.bindings
+        mouseDrafts = mapping.mouseBindings
         displayedProfile = mapping.profile
         selected = mapping.profile == .chromecast ? 8 : 7
         super.init(frame: NSRect(x: 0, y: 0, width: 1024, height: 574))
@@ -120,9 +128,22 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         let deviceEyebrow = SettingsTheme.eyebrow("01 / YOUR REMOTE", light: true)
         deviceEyebrow.frame = NSRect(x: 24, y: 21, width: 220, height: 16); stage.addSubview(deviceEyebrow)
         deviceName.frame = NSRect(x: 23, y: 44, width: 300, height: 26); stage.addSubview(deviceName)
-        diagram.frame = NSRect(x: 66, y: 83, width: 260, height: 460)
+        diagram.frame = NSRect(x: 66, y: 113, width: 260, height: 424)
         diagram.bounds = NSRect(x: 0, y: 0, width: 305, height: 540)
         stage.addSubview(diagram)
+        modePicker.segmentCount = 2
+        modePicker.setLabel(L("普通键位"), forSegment: 0)
+        modePicker.setLabel(L("鼠标键位"), forSegment: 1)
+        modePicker.segmentStyle = .separated
+        modePicker.segmentDistribution = .fillEqually
+        modePicker.selectedSegmentBezelColor = SettingsTheme.forest
+        modePicker.selectedSegment = 0
+        modePicker.font = .systemFont(ofSize: 12, weight: .medium)
+        modePicker.target = self; modePicker.action = #selector(modeChanged)
+        modePicker.setAccessibilityLabel(L("要编辑的模式"))
+        modePicker.toolTip = L("这里只选择要编辑的键位；用遥控器的切换键进入或退出鼠标模式。")
+        modePicker.frame = NSRect(x: 24, y: 77, width: 348, height: 30)
+        stage.addSubview(modePicker)
         capacity.frame = NSRect(x: 24, y: 545, width: 350, height: 16); stage.addSubview(capacity)
         rebuildDiagram()
 
@@ -150,7 +171,11 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         place(actionLabel, y: 225, h: 16)
         actionPicker.autoenablesItems = false
         var group = ""
-        for (index, preset) in presets.enumerated() {
+        // Keep the existing preset indices while placing the mode entry where it is easy to find.
+        let toggleIndex = presets.firstIndex { $0.binding?.kind == .toggleMouseMode }!
+        let orderedPresets = [toggleIndex] + presets.indices.filter { $0 != toggleIndex }
+        for index in orderedPresets {
+            let preset = presets[index]
             if preset.group != group {
                 if !group.isEmpty { actionPicker.menu?.addItem(.separator()) }
                 actionPicker.menu?.addItem(.sectionHeader(title: preset.group))
@@ -229,16 +254,18 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     override func resizeSubviews(withOldSize oldSize: NSSize) {
         super.resizeSubviews(withOldSize: oldSize)
         guard let stage = diagram.superview else { return }
-        diagram.setFrameOrigin(NSPoint(x: (stage.bounds.width - diagram.frame.width) / 2, y: 83))
+        diagram.setFrameOrigin(NSPoint(x: (stage.bounds.width - diagram.frame.width) / 2, y: 113))
         deviceName.setFrameSize(NSSize(width: stage.bounds.width - 46, height: 26))
+        modePicker.setFrameSize(NSSize(width: stage.bounds.width - 48, height: 30))
         capacity.setFrameSize(NSSize(width: stage.bounds.width - 48, height: 16))
     }
 
     func switchProfile() {
         guard displayedProfile != mapping.profile else { return }
-        draftCache[displayedProfile] = drafts
+        draftCache[displayedProfile] = (normalDrafts, mouseDrafts)
         displayedProfile = mapping.profile
-        drafts = draftCache[displayedProfile] ?? mapping.bindings
+        normalDrafts = draftCache[displayedProfile]?.normal ?? mapping.bindings
+        mouseDrafts = draftCache[displayedProfile]?.mouse ?? mapping.mouseBindings
         selected = displayedProfile == .chromecast ? 8 : 7
         triggerPicker.selectedSegment = 0
         rebuildDiagram()
@@ -300,10 +327,13 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         actionPicker.itemArray.first { !$0.isSeparatorItem && !$0.isSectionHeader && $0.tag == index }
     }
     private var selectedConfiguration: ButtonBinding {
-        drafts[String(selected)] ?? .init(singleClick: selectedButton?.initial ?? .init(kind: .original))
+        guard let selectedButton else { return .init(singleClick: .init(kind: .original)) }
+        return KeyMapping.binding(selectedButton, normal: normalDrafts, mouse: mouseDrafts, inMouseMode: editingMouse)
     }
     private var selectedBinding: ButtonAction { selectedConfiguration[selectedTrigger] ?? .init(kind: .disabled) }
+    private var reservedToggle: Bool { editingMouse && selectedConfiguration.togglesMouseMode }
     private func setSelectedBinding(_ value: ButtonAction?) {
+        guard !reservedToggle else { return }
         var configuration = selectedConfiguration
         configuration[selectedTrigger] = value
         drafts[String(selected)] = configuration
@@ -311,12 +341,16 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
 
     @objc private func selectKey(_ sender: NSButton) { selected = UInt8(sender.tag); displaySelection() }
     @objc private func triggerChanged() { displaySelection() }
+    @objc private func modeChanged() {
+        triggerPicker.selectedSegment = 0
+        displaySelection()
+    }
 
     private func displaySelection() {
         for (code, button) in remoteButtons {
             button.selected = code == selected
             if let physical = mapping.buttons.first(where: { $0.code == code }) {
-                button.toolTip = "\(physical.name) → \((drafts[String(code)] ?? .init(singleClick: physical.initial)).summary)"
+                button.toolTip = "\(physical.name) → \(KeyMapping.binding(physical, normal: normalDrafts, mouse: mouseDrafts, inMouseMode: editingMouse).summary)"
             } else { button.toolTip = L("按住说话，松开结束") }
         }
         let voice = selected == 0
@@ -330,22 +364,32 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
             item.isEnabled = selectedTrigger != .doubleClick
             item.title = selectedTrigger == .longPress ? L("遥控器麦克风（长按后开麦）") : presets[voiceIndex].title
         }
+        for (index, preset) in presets.enumerated() {
+            if preset.binding?.kind == .toggleMouseMode {
+                presetItem(index)?.isHidden = editingMouse && !reservedToggle
+                presetItem(index)?.isEnabled = !editingMouse
+            }
+            if preset.binding?.isMouseMovement == true { presetItem(index)?.isEnabled = selectedTrigger != .doubleClick }
+        }
         keyPicker.item(at: 0)?.isEnabled = selectedTrigger != .doubleClick
         let value = selectedBinding
         let unset = selectedTrigger != .singleClick && selectedConfiguration[selectedTrigger] == nil
         actionPicker.select(presetItem(unset ? 0 : ActionCatalog.index(for: value)))
         textEditor.string = value.text ?? ""
         targetField.stringValue = value.kind == .openApp ? value.appPath ?? "" : value.url ?? ""
-        actionPicker.isEnabled = !voice; resetButton.isEnabled = !voice
+        actionPicker.isEnabled = !voice && !reservedToggle; resetButton.isEnabled = !voice && !reservedToggle
         keyPicker.selectItem(at: MappingKey.all.firstIndex { $0.usage == value.usage } ?? 0)
         for (button, flag) in modifierButtons { button.state = CGEventFlags(rawValue: value.modifiers).contains(flag) ? .on : .off }
+        capacity.stringValue = editingMouse ? L("独立鼠标键位 · 切换键在普通键位设置") :
+            L("选择按键，可将动作设为“切换鼠标模式”")
+        capacity.toolTip = capacity.stringValue
         displayOptions()
         refreshStatus()
     }
 
     private func displayOptions() {
         currentLabel.stringValue = selected == 0 ? L("遥控器麦克风 · 按住说话") :
-            L("已保存 · %@：%@", selectedTrigger.title, mapping.binding(selectedButton!)[selectedTrigger].map(ActionCatalog.displayName) ?? L("未设置"))
+            L("已保存 · %@：%@", selectedTrigger.title, mapping.binding(selectedButton!, mouse: editingMouse)[selectedTrigger].map(ActionCatalog.displayName) ?? L("未设置"))
         currentLabel.toolTip = currentLabel.stringValue
 
         if let selectedButton { remoteButtons[selected]?.toolTip = "\(selectedButton.name) → \(selectedConfiguration.summary)" }
@@ -365,7 +409,15 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         targetField.isEditable = webpage
         targetField.placeholderString = app ? L("点击下方按钮选择 .app") : "https://example.com"
         chooseAppButton.isHidden = !app
-        if selected == 0 {
+        if reservedToggle {
+            hint.stringValue = L("此键的模式切换手势在两种模式中都保留。\n可切换上方手势查看；请在“普通键位”中修改。")
+        } else if selectedBinding.kind == .toggleMouseMode {
+            hint.stringValue = L("用此键的%@切换模式；松开所有键后生效。\n再次使用相同手势退出。鼠标键位会保留此键的所有手势。", selectedTrigger.title)
+        } else if selectedBinding.isMouseMovement {
+            hint.stringValue = L("按住持续移动，松开立即停止；长按移动逐渐加速。\n可同时按两个方向斜向移动。")
+        } else if selectedBinding.isMouseAction {
+            hint.stringValue = L("在指针当前位置点击一次，按住不会重复点击。\n连续按两次左键可双击。")
+        } else if selected == 0 {
             hint.stringValue = L("使用%@遥控器自带麦克风，按住收音、松开结束。\n", mapping.profile.title) +
                 (mapping.profile == .chromecast ? L("普通键也可选择“遥控器麦克风”动作（需 ATVV 1.0）。") : L("小米目前仅支持原语音键开启麦克风。"))
         }
@@ -465,7 +517,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
 
     @objc private func chooseApp() {
         guard let window, selectedBinding.kind == .openApp else { return }
-        let profile = displayedProfile, code = selected, trigger = selectedTrigger
+        let profile = displayedProfile, code = selected, trigger = selectedTrigger, mouse = editingMouse
         let panel = NSOpenPanel()
         panel.title = L("选择要打开的应用")
         panel.allowedContentTypes = [.applicationBundle]
@@ -474,7 +526,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
         panel.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .OK, let path = panel.url?.path,
-                  self.displayedProfile == profile, self.selected == code, self.selectedTrigger == trigger,
+                  self.displayedProfile == profile, self.selected == code, self.selectedTrigger == trigger, self.editingMouse == mouse,
                   self.selectedBinding.kind == .openApp else { return }
             guard KeyMapping.applicationURL(path) != nil else { self.liveStatus.stringValue = L("请选择可运行的 Mac 应用"); return }
             var value = self.selectedBinding
@@ -485,12 +537,12 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     }
 
     @objc private func saveMappings() {
-        mapping.save(drafts)
+        mapping.save(normalDrafts, mouse: mouseDrafts)
         displaySelection()
     }
 
     @objc private func resetKey() {
-        guard selectedButton != nil else { return }
+        guard selectedButton != nil, !reservedToggle else { return }
         drafts.removeValue(forKey: String(selected))
         displaySelection()
     }
@@ -508,16 +560,18 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     }
 
     func refreshStatus() {
-        let dirty = drafts != mapping.bindings
-        let invalid = mapping.buttons.compactMap { button -> String? in
-            drafts[String(button.code)]?.validationMessage(for: mapping.profile).map { "\(button.name)：\($0)" }
+        let dirty = normalDrafts != mapping.bindings || mouseDrafts != mapping.mouseBindings
+        let invalid = [normalDrafts, mouseDrafts].flatMap { values in
+            mapping.buttons.compactMap { button -> String? in
+                values[String(button.code)]?.validationMessage(for: mapping.profile).map { "\(button.name)：\($0)" }
+            }
         }.first
         liveStatus.stringValue = invalid ?? (dirty ? L("有未保存的修改") : mapping.status)
         liveStatus.toolTip = liveStatus.stringValue
         liveStatus.textColor = invalid == nil ? SettingsTheme.secondary : SettingsTheme.error
         hint.textColor = selectedConfiguration.validationMessage == nil ? SettingsTheme.secondary : SettingsTheme.error
         permissionButton.isHidden = (mapping.listeningAllowed && AXIsProcessTrusted()) ||
-            !mapping.buttons.contains { (drafts[String($0.code)] ?? .init(singleClick: $0.initial)).usesListener }
+            !mapping.buttons.contains { KeyMapping.binding($0, normal: normalDrafts, mouse: mouseDrafts, inMouseMode: editingMouse).usesListener }
         permissionButton.title = !mapping.listeningAllowed ? L("允许输入监控") : L("允许辅助功能")
         saveButton.isEnabled = invalid == nil && (dirty || mapping.needsApply)
     }

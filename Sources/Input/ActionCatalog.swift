@@ -89,6 +89,14 @@ enum ActionCatalog {
         key(L("网页与标签"), L("恢复缩放 · ⌘0"), 0x27, .maskCommand),
         action(L("网页与标签"), L("打开指定网页…"), .openURL),
 
+        action(L("鼠标模式"), L("切换鼠标模式"), .toggleMouseMode),
+        action(L("鼠标模式"), L("鼠标向上移动"), .mouseUp),
+        action(L("鼠标模式"), L("鼠标向下移动"), .mouseDown),
+        action(L("鼠标模式"), L("鼠标向左移动"), .mouseLeft),
+        action(L("鼠标模式"), L("鼠标向右移动"), .mouseRight),
+        action(L("鼠标模式"), L("鼠标左键点击"), .mouseLeftClick),
+        action(L("鼠标模式"), L("鼠标右键点击"), .mouseRightClick),
+
         action(L("滚动与光标"), L("向上滚动"), .scrollUp), action(L("滚动与光标"), L("向下滚动"), .scrollDown),
         action(L("滚动与光标"), L("向左滚动"), .scrollLeft), action(L("滚动与光标"), L("向右滚动"), .scrollRight),
         key(L("滚动与光标"), L("向上翻页 · Page Up"), 0x4B), key(L("滚动与光标"), L("向下翻页 · Page Down"), 0x4E),

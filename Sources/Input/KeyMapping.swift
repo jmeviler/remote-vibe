@@ -166,12 +166,12 @@ struct ButtonBinding: Codable, Equatable {
         }
     }
 
-    var togglesMouseMode: Bool { singleClick.kind == .toggleMouseMode }
+    var togglesMouseMode: Bool { [singleClick, doubleClick, longPress].contains { $0?.kind == .toggleMouseMode } }
+    var immediateMouseToggle: Bool { singleClick.kind == .toggleMouseMode && !hasGestures }
     var hasGestures: Bool { doubleClick != nil || longPress != nil }
     var usesListener: Bool { hasGestures || singleClick.usesListener }
     var validationMessage: String? {
         if let error = [singleClick, doubleClick, longPress].compactMap({ $0?.configurationError }).first { return error }
-        if [doubleClick, longPress].contains(where: { $0?.kind == .toggleMouseMode }) || (togglesMouseMode && hasGestures) { return L("模式切换请单独设为单击，并清除该键的双击和长按。") }
         if hasGestures && singleClick.isMouseMovement { return L("单击移动需要按住连续响应；请将移动放到长按，或取消双击和长按。") }
         if doubleClick?.isMouseMovement == true { return L("双击不支持持续移动；请将移动放到单击或长按。") }
         if hasGestures && singleClick.kind == .original { return L("使用双击或长按前，请为单击选择明确动作（也可选“不执行”）。") }
@@ -562,9 +562,9 @@ final class KeyMapping {
             if captureReady { onCapturedPress?(0) }
             return
         }
-        // A toggle takes priority over any other newly pressed custom action.
+        // An immediate toggle takes priority; gesture bindings must still wait for recognition.
         if capturedButtons.isEmpty, pendingCapture == nil, canPerform(),
-           let toggle = buttons.first(where: { added.contains($0.code) && activeShortcuts.contains($0.code) && activeBinding($0).togglesMouseMode }) {
+           let toggle = buttons.first(where: { added.contains($0.code) && activeShortcuts.contains($0.code) && activeBinding($0).immediateMouseToggle }) {
             perform(activeBinding(toggle).singleClick, button: toggle.code)
             return
         }

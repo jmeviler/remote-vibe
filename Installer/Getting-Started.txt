@@ -43,12 +43,12 @@ Google defaults: Mute = Enter; Center OK = Esc; Back = Backspace; Home = switch 
 YouTube = switch display. Xiaomi: Center OK = Enter; Back = Backspace; others retain defaults.
 
 MOUSE MODE (0.4.5)
-In Normal bindings, assign Toggle mouse mode to a key's single press and clear its double
-and long press actions. In Mouse bindings, configure movement and clicks separately.
+In Normal bindings, choose a key and a single, double or long press. Select Toggle mouse
+mode at the top of the action list. Existing hold-action compatibility rules still apply. In Mouse bindings, configure movement and clicks separately.
 Save and Apply saves both modes. Editing a bindings tab does not change the active mode.
 Defaults: arrows move the pointer, Center OK left-clicks, Back right-clicks; other keys
 retain their system behavior. The toggle key stays available in both modes.
-Press it to enter, then press it again to exit and restore normal bindings. Switching
+Use the configured gesture to enter, then repeat it to exit and restore normal bindings. Switching
 waits until all keys are released. Hold directions for accelerating movement; release
 to stop. Clicks fire once per press; press left click twice quickly to double-click.
 The menu indicates mouse mode and offers Exit Mouse Mode. Save, disconnect, lock, sleep

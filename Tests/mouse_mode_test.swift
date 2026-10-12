@@ -50,9 +50,11 @@ enum MouseModeTests {
         precondition(ButtonBinding(singleClick: move, doubleClick: .init(kind: .mouseLeftClick)).validationMessage != nil)
         precondition(ButtonBinding(singleClick: .init(kind: .disabled), longPress: move).validationMessage == nil)
         precondition(ButtonBinding(singleClick: .init(kind: .disabled), doubleClick: move).validationMessage != nil)
-        precondition(ButtonBinding(singleClick: toggle, longPress: move).validationMessage != nil)
-        precondition(ButtonBinding(singleClick: .init(kind: .disabled), longPress: toggle).validationMessage != nil)
+        precondition(ButtonBinding(singleClick: toggle, longPress: move).validationMessage == nil)
+        precondition(ButtonBinding(singleClick: .init(kind: .disabled), longPress: toggle).validationMessage == nil)
         precondition(ButtonBinding(singleClick: toggle).validationMessage == nil)
+
+        try toggleGestures()
 
         var point = CGPoint(x: 500, y: 500)
         var now = 0.0, permitted = true
@@ -123,4 +125,60 @@ enum MouseModeTests {
         precondition(events.allSatisfy { $0.getIntegerValueField(.eventSourceUserData) == 0x524D564B })
         print("PASS: mouse-mode transitions, independent bindings, balanced clicks, double-click timing, acceleration, diagonal movement, display bounds and cancellation (no input posted).")
     }
+    private static func toggleGestures() throws {
+        let toggle = ButtonAction(kind: .toggleMouseMode)
+        for trigger in ButtonTrigger.allCases {
+            var binding = ButtonBinding(singleClick: .init(kind: .key, usage: 0x28))
+            binding[trigger] = toggle
+            precondition(binding.validationMessage == nil && binding.togglesMouseMode)
+            precondition(binding.immediateMouseToggle == (trigger == .singleClick))
+            let decoded = try JSONDecoder().decode(ButtonBinding.self, from: JSONEncoder().encode(binding))
+            precondition(decoded == binding)
+            for profile in RemoteProfile.allCases {
+                let button = MappedButton.buttons(for: profile).first { $0.code == 10 }!
+                let resolved = KeyMapping.binding(button, normal: ["10": binding], mouse: ["10": .init(singleClick: .init(kind: .mouseLeftClick))], inMouseMode: true)
+                precondition(resolved == binding) // The same gesture must always exit.
+            }
+        }
+        let combined = ButtonBinding(singleClick: toggle, doubleClick: .init(kind: .key), longPress: toggle)
+        precondition(combined.validationMessage == nil && !combined.immediateMouseToggle)
+
+        // Feed the actual recognizer into the mode state: double click switches
+        // once on release; long press waits for release and never adds a click.
+        for trigger in [ButtonTrigger.doubleClick, .longPress] {
+            var gestures = ButtonGestureRecognizer()
+            var mode = MouseModeState()
+            var held = Set<UInt8>()
+            var transitions = 0
+            func apply(_ commands: [ButtonGestureRecognizer.Command]) {
+                for command in commands {
+                    if case let .trigger(_, fired) = command, fired == trigger {
+                        mode.requestToggle()
+                        if mode.applyIfReleased(held) { transitions += 1 }
+                    }
+                }
+            }
+            for cycle in 0..<2 {
+                let base = Double(cycle) * 2
+                held = [10]
+                apply(gestures.press(10, doubleClick: trigger == .doubleClick, longPress: trigger == .longPress, at: base))
+                precondition(transitions == cycle)
+                if trigger == .doubleClick {
+                    held = []; apply(gestures.release(10, at: base + 0.05))
+                    precondition(transitions == cycle)
+                    held = [10]; apply(gestures.press(10, doubleClick: true, longPress: false, at: base + 0.1))
+                    held = []; apply(gestures.release(10, at: base + 0.15))
+                } else {
+                    apply(gestures.timeout(10, trigger: .longPress, at: base + 0.56))
+                    precondition(mode.pending != nil && transitions == cycle)
+                    held = []; apply(gestures.release(10, at: base + 0.6))
+                    if mode.applyIfReleased(held) { transitions += 1 }
+                }
+                precondition(transitions == cycle + 1 && mode.active == (cycle == 0))
+                apply(gestures.timeout(10, trigger: .singleClick, at: base + 1))
+                precondition(transitions == cycle + 1)
+            }
+        }
+    }
+
 }

@@ -34,6 +34,8 @@ enum ButtonGestureUITest {
         let reset = all.compactMap { $0 as? NSButton }.first { $0.title == L("恢复此键默认") }!
         func choose(_ title: String) {
             precondition(action.itemTitles.contains(title))
+            let item = action.itemArray.first { !$0.isSectionHeader && $0.title == title }!
+            precondition(item.isEnabled && !item.isHidden, "User cannot select disabled/hidden action: \(title)")
             action.selectItem(withTitle: title); change(action)
         }
         func selectTrigger(_ index: Int) { trigger.selectedSegment = index; change(trigger) }
@@ -43,6 +45,35 @@ enum ButtonGestureUITest {
             }!
             change(button)
         }
+        let modes = all.compactMap { $0 as? NSSegmentedControl }.first { $0.action == NSSelectorFromString("modeChanged") }!
+        func selectMode(_ mouse: Bool) { modes.selectedSegment = mouse ? 1 : 0; change(modes) }
+        let toggleItem = action.itemArray.first { !$0.isSectionHeader && $0.title == L("切换鼠标模式") }!
+        precondition(action.itemArray.first { !$0.isSectionHeader && !$0.isSeparatorItem } === toggleItem)
+        for gesture in 0..<3 {
+            selectTrigger(gesture)
+            precondition(toggleItem.isEnabled && !toggleItem.isHidden, "Mouse toggle must be selectable for every normal-mode gesture")
+            choose(L("切换鼠标模式"))
+            precondition(save.isEnabled)
+            selectMode(true)
+            selectTrigger(gesture)
+            precondition(!action.isEnabled && trigger.isEnabled && action.titleOfSelectedItem == L("切换鼠标模式"))
+            selectMode(false)
+            selectTrigger(gesture)
+            precondition(action.isEnabled && action.titleOfSelectedItem == L("切换鼠标模式"))
+            change(reset)
+        }
+        // Existing user keys often already have a double-click shortcut.
+        // Choosing a single-click toggle must remain selectable and saveable.
+        selectTrigger(1)
+        choose(L("复制 · ⌘C"))
+        selectTrigger(0)
+        choose(L("切换鼠标模式"))
+        precondition(save.isEnabled)
+        selectMode(true)
+        selectTrigger(1)
+        precondition(action.titleOfSelectedItem == L("复制 · ⌘C") && !action.isEnabled)
+        selectMode(false)
+        change(reset)
         selectTrigger(1)
         precondition(action.titleOfSelectedItem == L("未设置"))
         precondition(action.itemArray.first { $0.tag == 2 && !$0.isSectionHeader }?.isEnabled == false)
@@ -135,8 +166,6 @@ enum ButtonGestureUITest {
         selectTrigger(0)
         selectButton(10)
         choose(L("切换鼠标模式"))
-        let modes = all.compactMap { $0 as? NSSegmentedControl }.first { $0.action == NSSelectorFromString("modeChanged") }!
-        func selectMode(_ mouse: Bool) { modes.selectedSegment = mouse ? 1 : 0; change(modes) }
         selectMode(true)
         precondition(action.titleOfSelectedItem == L("切换鼠标模式") && !action.isEnabled && !reset.isEnabled)
         selectButton(3)

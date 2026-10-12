@@ -171,7 +171,11 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         place(actionLabel, y: 225, h: 16)
         actionPicker.autoenablesItems = false
         var group = ""
-        for (index, preset) in presets.enumerated() {
+        // Keep the existing preset indices while placing the mode entry where it is easy to find.
+        let toggleIndex = presets.firstIndex { $0.binding?.kind == .toggleMouseMode }!
+        let orderedPresets = [toggleIndex] + presets.indices.filter { $0 != toggleIndex }
+        for index in orderedPresets {
+            let preset = presets[index]
             if preset.group != group {
                 if !group.isEmpty { actionPicker.menu?.addItem(.separator()) }
                 actionPicker.menu?.addItem(.sectionHeader(title: preset.group))
@@ -351,7 +355,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         }
         let voice = selected == 0
         nameLabel.stringValue = selectedButton?.name ?? L("语音键")
-        triggerPicker.isEnabled = !voice && !reservedToggle
+        triggerPicker.isEnabled = !voice
         presetItem(0)?.title = selectedTrigger == .singleClick ? L("原按键功能") : L("未设置")
         presetItem(2)?.title = selectedTrigger == .longPress ? L("Fn 按键（长按后保持）") : presets[2].title
         presetItem(2)?.isEnabled = selectedTrigger != .doubleClick
@@ -363,7 +367,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         for (index, preset) in presets.enumerated() {
             if preset.binding?.kind == .toggleMouseMode {
                 presetItem(index)?.isHidden = editingMouse && !reservedToggle
-                presetItem(index)?.isEnabled = !editingMouse && selectedTrigger == .singleClick
+                presetItem(index)?.isEnabled = !editingMouse
             }
             if preset.binding?.isMouseMovement == true { presetItem(index)?.isEnabled = selectedTrigger != .doubleClick }
         }
@@ -406,9 +410,9 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         targetField.placeholderString = app ? L("点击下方按钮选择 .app") : "https://example.com"
         chooseAppButton.isHidden = !app
         if reservedToggle {
-            hint.stringValue = L("这是进入和退出鼠标模式的同一个按键。\n请在“普通键位”中修改，鼠标键位会自动保留它。")
+            hint.stringValue = L("此键的模式切换手势在两种模式中都保留。\n可切换上方手势查看；请在“普通键位”中修改。")
         } else if selectedBinding.kind == .toggleMouseMode {
-            hint.stringValue = L("单击进入鼠标模式，再按此键退出；松开所有键后切换。\n在左侧“鼠标键位”中独立配置移动和点击。")
+            hint.stringValue = L("用此键的%@切换模式；松开所有键后生效。\n再次使用相同手势退出。鼠标键位会保留此键的所有手势。", selectedTrigger.title)
         } else if selectedBinding.isMouseMovement {
             hint.stringValue = L("按住持续移动，松开立即停止；长按移动逐渐加速。\n可同时按两个方向斜向移动。")
         } else if selectedBinding.isMouseAction {

@@ -11,7 +11,7 @@
 
 ## 宣传片
 
-https://github.com/jmeviler/remote-vibe/blob/main/Docs/Images/remote-vibe-promo.mp4
+https://github.com/user-attachments/assets/4cbc3415-3314-42ce-bcce-033f001962ea
 
 30 秒快速了解 Remote Vibe（中文配音）。
 

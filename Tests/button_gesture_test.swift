@@ -147,6 +147,7 @@ enum ButtonGestureTest {
         early.expect([.longPress])
 
         try MouseModeTests.run()
+        try MappingStoreTests.run()
         try configurations()
         try actions()
         reports()

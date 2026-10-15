@@ -302,6 +302,8 @@ final class KeyMapping {
     private let dst = "HIDKeyboardModifierMappingDst"
     private(set) var bindings: Bindings
     private(set) var mouseBindings: Bindings
+    private let store: MappingStore
+    private(set) var configurationNotice: String?
     private(set) var profile: RemoteProfile
     var buttons: [MappedButton] { MappedButton.buttons(for: profile) }
     private(set) var status = L("等待遥控器连接")
@@ -323,20 +325,22 @@ final class KeyMapping {
         return accessGranted
     }
 
-    init(profile: RemoteProfile = .chromecast) {
+    init(profile: RemoteProfile = .chromecast, store: MappingStore = MappingStore()) {
         self.profile = profile
-        bindings = Self.load(profile)
-        mouseBindings = Self.load(profile, mouse: true)
+        self.store = store
+        let normal = store.load(profile), mouse = store.load(profile, mouse: true)
+        bindings = normal.bindings; mouseBindings = mouse.bindings
+        configurationNotice = Self.recoveryNotice(normal.recovered || mouse.recovered)
     }
 
-    private static func load(_ profile: RemoteProfile, mouse: Bool = false) -> Bindings {
-        if let data = UserDefaults.standard.data(forKey: mouse ? profile.mouseMappingKey : profile.mappingKey),
-           let stored = try? JSONDecoder().decode(Bindings.self, from: data) {
-            return stored.filter { code, b in
-                MappedButton.buttons(for: profile).contains { String($0.code) == code } &&
-                b.validationMessage(for: profile) == nil && (!mouse || !b.togglesMouseMode)
-            }
-        } else { return [:] }
+    private static func recoveryNotice(_ recovered: Bool) -> String? {
+        recovered ? L("部分配置无法读取，已恢复可用键位；请检查后保存，原始配置会保留") : nil
+    }
+
+    func configurationBackup() -> (normal: Bindings, mouse: Bindings)? {
+        let normal = store.backup(profile, mouse: false), mouse = store.backup(profile, mouse: true)
+        guard normal != nil || mouse != nil else { return nil }
+        return (normal ?? bindings, mouse ?? mouseBindings)
     }
 
     func selectProfile(_ profile: RemoteProfile) {
@@ -344,8 +348,9 @@ final class KeyMapping {
         stop()
         capturedButtons.removeAll(); pendingCapture = nil
         self.profile = profile
-        bindings = Self.load(profile)
-        mouseBindings = Self.load(profile, mouse: true)
+        let normal = store.load(profile), mouse = store.load(profile, mouse: true)
+        bindings = normal.bindings; mouseBindings = mouse.bindings
+        configurationNotice = Self.recoveryNotice(normal.recovered || mouse.recovered)
         bindingsRevision += 1; revision += 1
         refresh()
     }
@@ -409,6 +414,10 @@ final class KeyMapping {
         let mouseValues = mouse ?? mouseBindings
         guard !mouseValues.values.contains(where: { $0.togglesMouseMode }) else { return }
         if let error = (Array(values.values) + Array(mouseValues.values)).compactMap({ $0.validationMessage(for: profile) }).first { status = error; return }
+        do {
+            try store.save(values, profile: profile, mouse: false)
+            try store.save(mouseValues, profile: profile, mouse: true)
+        } catch { status = L("无法保存按键配置，请重试"); return }
         releaseMappedFn()
         releaseMappedVoice(normal: false)
         cancelPendingActions()
@@ -416,8 +425,7 @@ final class KeyMapping {
         resetMouseMode()
         bindings = values
         mouseBindings = mouseValues
-        if let data = try? JSONEncoder().encode(mouseValues) { UserDefaults.standard.set(data, forKey: profile.mouseMappingKey) }
-        if let data = try? JSONEncoder().encode(values) { UserDefaults.standard.set(data, forKey: profile.mappingKey) }
+        configurationNotice = nil
         cancelRepeats()
         bindingsRevision += 1
         revision += 1

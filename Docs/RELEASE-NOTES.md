@@ -1,22 +1,29 @@
-Remote Vibe 0.4.5 · 简体中文 / English · Apple Silicon · macOS 15+
+Remote Vibe 0.4.6 · 简体中文 / English · Apple Silicon · macOS 15+
 
-- 新增一键鼠标模式；普通键的单击、双击、长按均可选择「切换鼠标模式」，用相同手势退出，恢复普通键位。
-- 普通键位与鼠标键位独立编辑和保存，两种遥控器分别保留配置；切换键在两种模式下都可使用。
-- 默认方向键移动、中央键左击、返回键右击，可分别改绑；按住移动、松开停止，连续两次左击可双击。
-- 菜单栏显示当前模式并提供退出入口；断连、保存、锁屏、休眠、切换型号后退出鼠标模式，语音开始时停止移动。
+- 音频设备失效或系统音频服务重启后自动重建连接；开麦失败最多重建并重试一次。录音中断后取消本次语音，等待重新按键。
+- 修复展开菜单时语音准备和收尾可能暂停的问题，及时释放 Fn 并恢复原麦克风。
+- 配置逐键容错，保存前保留有效备份或损坏原文。菜单栏「键位配置」支持导出已保存键位、导入草稿和载入有效备份；导入与恢复后仍需点击「保存并生效」。
+- 增加本地语音耗时、缓存峰值、缓冲溢出和排空超时诊断，不记录音频或识别文字。语音等待参数保持原值。
+- 音频恢复、菜单收尾、配置备份与导入导出测试，以及已有驱动测试纳入 CI。
 
 **下载选择**
 
-- 首次安装：`Remote-Vibe-<版本>-Mac-AppleSilicon.zip`，包含 App、语音组件和使用说明。
-- 已安装语音组件：`Remote-Vibe-<版本>-App-AppleSilicon.zip`。退出 App、备份旧 App 后替换原位置；不重启音频服务。
-- `SHA256SUMS.txt` 可校验下载文件。只使用一只遥控器，两种型号配置独立保留。
+- 首次安装：`Remote-Vibe-0.4.6-Mac-AppleSilicon.zip`，包含 App、语音组件、使用说明和对应源码。
+- 已安装语音组件：`Remote-Vibe-0.4.6-App-AppleSilicon.zip`。退出 App、备份旧 App 后替换原位置；沿用现有驱动，无需重启音频服务。
+- 在下载目录运行 `shasum -a 256 -c SHA256SUMS.txt` 校验两个 ZIP。
+
+本版已通过隔离的音频恢复与驱动测试、语音协议 / 会话测试、手势 / 鼠标 / 配置测试、中英文 UI 检查及完整构建。真实遥控器与微信出字尚未在本版重新实测。
 
 当前为未经过 Apple 公证的试用构建。语音识别仍依赖微信全局 Fn 语音输入；语音期间会临时切换系统默认麦克风。
 
 ---
 
-Assign a single, double or long press to toggle mouse mode from the top of the action list, with separate normal and mouse bindings for each remote model. The toggle remains available in both modes. Defaults use the arrows for movement, Center OK for left click and Back for right click; all can be configured. Hold to move with gradual acceleration and release to stop. Two quick left clicks double-click. The menu indicates mouse mode and provides an exit action. Saving, disconnecting, locking, sleeping or changing remotes exits mouse mode; voice start stops movement. Existing normal mappings are preserved.
+This update rebuilds the audio connection after a device failure or an audio-service restart, retries a failed microphone start once, and cancels interrupted recordings until the next button press. Voice preparation and cleanup continue while the menu is open.
 
-**Downloads:** use `Mac-AppleSilicon.zip` for first setup with the voice component, or `App-AppleSilicon.zip` to replace only the app after quitting and backing it up. The app-only update does not restart system audio. Verify downloads with `SHA256SUMS.txt`.
+Bindings now recover per button and preserve a valid backup or the original damaged data before saving. The **Binding Configurations** menu exports saved normal/mouse bindings, imports a draft, and loads the last valid backup. Review imported or restored drafts and click **Save and Apply**.
 
-Trial build: ad hoc signed, not Apple-notarized. Recognition requires WeChat global hold-Fn input. Voice temporarily changes the default input device; select a physical microphone in other recording apps.
+Local diagnostics include session timings, peak buffering, overflow and drain timeouts, without recording audio or recognized text. Existing voice delay values are unchanged. Audio recovery, menu cleanup, configuration and driver tests now run in CI.
+
+**Downloads:** use `Mac-AppleSilicon.zip` for first setup, or `App-AppleSilicon.zip` to replace only the app after quitting and backing it up. The driver is unchanged. Verify downloads with `SHA256SUMS.txt`.
+
+Automated checks and the full build passed. Physical remote and WeChat transcription tests have not been repeated for this version. Trial build: ad hoc signed, not Apple-notarized. Recognition requires WeChat global hold-Fn input; voice temporarily changes the default input device.

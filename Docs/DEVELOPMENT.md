@@ -2,7 +2,7 @@
 
 项目简介见 [README](../README.md)；默认键位、权限、手势设置和卸载方法见 [安装与使用说明](../Installer/开始使用.txt)。
 
-编译、测试程序构建和打包统一在 GitHub Actions 云端 Mac 执行，流程见 [发布与更新](RELEASING.md)。本机用于源码编辑、静态检查、下载校验，以及按需安装预览。以下构建命令是云端 runner 使用的命令，从仓库根目录执行。
+编译、测试程序构建和打包统一在 GitHub Actions 云端 Mac 执行，流程见 [发布与更新](RELEASING.md)。本机用于源码编辑、静态检查、下载校验，以及按需安装预览。以下构建命令是云端 runner 使用的命令，从仓库根目录执行。`Scripts/build-target.sh` 从 `REMOTE_VIBE_ARCH` 或 runner 本机架构选择 `arm64` / `x86_64`；CI 明确设置并验证架构。
 
 ```sh
 zsh Scripts/build-app.sh
@@ -28,7 +28,7 @@ zsh Scripts/build-driver.sh
 zsh Scripts/package.sh
 ```
 
-输出位于 runner 的 `build/share/`，并上传为 `Remote-Vibe-AppleSilicon` Actions 产物，包含完整安装 ZIP、独立 App 更新 ZIP 和校验文件。打包不执行安装。发布步骤见 [发布与更新](RELEASING.md)。
+输出位于 runner 的 `build/share/`，并按架构上传为 `Remote-Vibe-AppleSilicon` / `Remote-Vibe-Intel` Actions 产物，再汇总为 `Remote-Vibe-Release`，包含完整安装 ZIP、独立 App 更新 ZIP 和校验文件。打包不执行安装。发布步骤见 [发布与更新](RELEASING.md)。
 
 ## 实现
 

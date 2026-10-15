@@ -1,7 +1,9 @@
 Remote Vibe — Getting started
 
 For users comfortable with Bluetooth pairing and macOS permissions.
-Requires Apple Silicon, macOS 15+, and a Google Chromecast Voice Remote or Xiaomi RC003.
+Requires an Apple Silicon or Intel Mac running macOS 15+, and a Google Chromecast Voice Remote or Xiaomi RC003.
+Choose AppleSilicon for M-series Macs or Intel for Intel Macs, as shown in About This Mac.
+Intel physical-remote and WeChat voice validation is still pending.
 Voice recognition requires WeChat’s global hold-Fn voice input; a chat voice-message button is not enough.
 Remote Vibe does not provide its own speech recognition service.
 
@@ -64,7 +66,7 @@ The sequence and password stay in the local Keychain. Startup/FileVault login is
 UPDATES AND REMOVAL
 The menu shows your version. Check for Updates contacts GitHub only when clicked;
 it does not download or install automatically. Draft releases do not appear in the check.
-For app updates, use the “App-AppleSilicon.zip” archive and its Update-README.txt.
+For app updates, use the “App-AppleSilicon.zip” or “App-Intel.zip” archive matching your Mac and its Update-README.txt.
 
 Voice temporarily switches the system default microphone and attempts to restore it afterward.
 Choose a physical microphone explicitly in conferencing/recording apps to avoid switching them.

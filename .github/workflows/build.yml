@@ -16,31 +16,68 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    name: Build ${{ matrix.chip }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+            chip: AppleSilicon
+          - runner: macos-15-intel
+            arch: x86_64
+            chip: Intel
+    runs-on: ${{ matrix.runner }}
+    env:
+      REMOTE_VIBE_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v7.0.1
+      - name: Verify native runner architecture
+        run: test "$(uname -m)" = "$REMOTE_VIBE_ARCH"
       - name: Check app support, gestures and voice sessions
         run: |
           zsh Tests/test-app-support.sh
           zsh Tests/test-button-gestures.sh
           zsh Tests/test-remote-voice.sh
           zsh Tests/test-audio-pipeline.sh
-      - name: Build and package (Apple Silicon, macOS 15+)
+      - name: Build and package (macOS 15+)
         run: |
           zsh Scripts/build-app.sh
           zsh Scripts/build-driver.sh
           zsh Scripts/package.sh
+      - name: Verify packaged architecture, installer and source
+        run: python3 Tests/package_test.py --arch "$REMOTE_VIBE_ARCH" --check-installer
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: Remote-Vibe-AppleSilicon
+          name: Remote-Vibe-${{ matrix.chip }}
           path: |
             build/share/*.zip
-            build/share/SHA256SUMS.txt
+            build/share/SHA256SUMS-${{ matrix.chip }}.txt
+          if-no-files-found: error
+
+  release-assets:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: Remote-Vibe-*
+          merge-multiple: true
+          path: release-assets
+      - name: Assemble and verify both architecture downloads
+        run: python3 Scripts/assemble-release.py release-assets
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: Remote-Vibe-Release
+          path: |
+            release-assets/*.zip
+            release-assets/SHA256SUMS.txt
           if-no-files-found: error
 
   draft-release:
     if: github.event_name == 'workflow_dispatch' && inputs.draft_release
-    needs: build
+    needs: release-assets
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -48,7 +85,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: Remote-Vibe-AppleSilicon
+          name: Remote-Vibe-Release
           path: release-assets
       - name: Create draft for review (never publishes automatically)
         env:

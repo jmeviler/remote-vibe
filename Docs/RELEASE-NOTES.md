@@ -1,27 +1,30 @@
-Remote Vibe 0.4.7 · 简体中文 / English · Apple Silicon · macOS 15+
+Remote Vibe 0.4.8 · 简体中文 / English · Apple Silicon / Intel · macOS 15+
 
-- 菜单栏改为透明图标，分别显示普通、语音中和鼠标模式；语音状态优先显示，悬停提示和辅助功能标签保留状态文字。
-- 提供普通屏与 Retina 图标，由 macOS 适配深浅色菜单栏。图标缓存复用，随状态变化更新，没有新增轮询或动画。
-- 修复深色遥控器卡片上「普通键位 / 鼠标键位」未选中文字过暗的问题，两种选中状态都清晰可读。
+- 新增 Intel Mac 下载包；Apple Silicon 与 Intel 分别编译、测试和打包，每个包包含对应架构的 App 和语音驱动。
+- 全部构建由 GitHub Actions 的 Apple Silicon / Intel 云端 Mac 完成；两种架构都通过后才汇总发布附件。
+- 安装器检查实际芯片，拒绝不匹配的安装包，包括在 Apple Silicon 上通过 Rosetta 打开 Intel 安装器的情况。
+- 手动检查更新按当前 App 架构匹配下载包；保留 Apple Silicon 原文件名，兼容旧版更新检测。
+- 发布前检查下载校验值、App / 驱动架构与签名、安装器约束、图标资源和对应源码。
 
 **下载选择**
 
-- 首次安装：`Remote-Vibe-0.4.7-Mac-AppleSilicon.zip`，包含 App、语音组件、使用说明和对应源码。
-- 已安装语音组件：`Remote-Vibe-0.4.7-App-AppleSilicon.zip`。退出 App、备份旧 App 后替换原位置；沿用现有驱动，无需重启音频服务。
-- 在下载目录运行 `shasum -a 256 -c SHA256SUMS.txt` 校验两个 ZIP。
+| Mac 芯片 | 首次安装：App + 语音组件 | 已有对应语音组件：仅更新 App |
+| --- | --- | --- |
+| Apple Silicon（M1 / M2 / M3 / M4 等 M 系列） | `Remote-Vibe-0.4.8-Mac-AppleSilicon.zip` | `Remote-Vibe-0.4.8-App-AppleSilicon.zip` |
+| Intel | `Remote-Vibe-0.4.8-Mac-Intel.zip` | `Remote-Vibe-0.4.8-App-Intel.zip` |
 
-本版界面已在本机安装确认；图标资源加载、普通屏 / Retina 尺寸与两种键位选择状态已检查。自动化测试、完整构建与打包通过。真实遥控器与微信出字尚未在本版重新实测。
+在“关于本机”查看芯片。两种架构均要求 macOS 15 或更新。更新前退出 App、备份旧 App，再替换原位置；App 更新包不会重启音频服务。完整包附对应源码、使用说明和卸载包。
 
-当前为未经过 Apple 公证的试用构建。语音识别仍依赖微信全局 Fn 语音输入；语音期间会临时切换系统默认麦克风。
+`SHA256SUMS.txt` 包含全部四个 ZIP 的校验值。下载全部附件时运行 `shasum -a 256 -c SHA256SUMS.txt`；只下载一个包时可运行 `shasum -a 256 <文件名>`，与校验文件中该文件的值比较。
+
+两种架构均通过云端原生编译、隔离测试、构建和打包检查。Intel 的真实蓝牙遥控器、系统驱动加载与微信出字尚未实测，当前作为新增试用包提供。此版本未改动音频处理逻辑。App 与驱动为临时签名，尚未经过 Apple 公证；语音识别依赖微信全局 Fn 语音输入。
 
 ---
 
-The menu bar now uses transparent icons for normal, speaking and mouse modes, with speaking taking priority. Tooltips and accessibility labels retain the status text.
+This release adds separate Intel Mac downloads alongside Apple Silicon. Each archive contains the matching native App and audio driver. GitHub Actions builds and tests each architecture on its own macOS runner; release assets are assembled only after both pass.
 
-Standard and Retina assets adapt to light and dark menu bars through macOS template rendering. Images are cached and updated when the state changes, with no added polling or animation.
+The installer rejects the wrong physical CPU, including an Intel installer opened through Rosetta on Apple silicon. Manual update checks match the current App architecture, while existing AppleSilicon asset names remain compatible with older clients.
 
-Fixed unreadable unselected text in the **Normal bindings / Mouse bindings** selector on the dark remote card. Both selection states are now readable.
+Choose **Mac-AppleSilicon.zip** or **Mac-Intel.zip** for first setup, and the matching **App-AppleSilicon.zip** or **App-Intel.zip** for an App-only update after quitting and backing up the old App. Both require macOS 15+. The combined **SHA256SUMS.txt** covers all four archives.
 
-**Downloads:** use `Mac-AppleSilicon.zip` for first setup, or `App-AppleSilicon.zip` to replace only the app after quitting and backing it up. The driver is unchanged. Verify downloads with `SHA256SUMS.txt`.
-
-The interface was installed and visually confirmed on a local Mac. Bundled icon loading, standard/Retina sizes and both binding selection states were checked. Automated tests, the full build and packaging passed. Physical remote and WeChat transcription tests have not been repeated for this version. Trial build: ad hoc signed, not Apple-notarized. Recognition requires WeChat global hold-Fn input; voice temporarily changes the default input device.
+Native cloud builds, isolated tests and package checks passed for both architectures. Intel Bluetooth remotes, system driver loading and WeChat transcription still require physical-device validation; Intel is offered as a new trial package. Audio processing is unchanged. The App and driver are ad hoc signed, not Apple-notarized. Voice recognition requires WeChat global hold-Fn input.

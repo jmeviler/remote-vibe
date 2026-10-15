@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h}/.."
+source Scripts/build-target.sh
 python3 - <<'PY'
 import json, pathlib, re, subprocess
 root = pathlib.Path('.')
@@ -17,7 +18,7 @@ for key in keys:
 print(f'PASS: {len(keys)} UI/status localization keys and format arguments.')
 PY
 mkdir -p build/tests
-xcrun swiftc -swift-version 5 -parse-as-library -target arm64-apple-macos15.0 \
+xcrun swiftc -swift-version 5 -parse-as-library -target "$remote_vibe_swift_target" \
   Sources/App/Localization.swift Sources/App/ReleaseUpdate.swift Tests/app_support_test.swift \
   -o build/tests/app-support
 build/tests/app-support

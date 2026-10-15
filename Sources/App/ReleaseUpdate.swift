@@ -2,6 +2,18 @@ import Foundation
 
 // Only stable major.minor.patch releases with our ready-to-download app archive count.
 struct ReleaseUpdate: Decodable {
+    enum Architecture: String, CaseIterable {
+        case appleSilicon = "AppleSilicon", intel = "Intel"
+        static var current: Architecture {
+            #if arch(arm64)
+            return .appleSilicon
+            #elseif arch(x86_64)
+            return .intel
+            #else
+            #error("Unsupported Mac architecture")
+            #endif
+        }
+    }
     struct Asset: Decodable {
         let name: String
         let state: String
@@ -21,7 +33,7 @@ struct ReleaseUpdate: Decodable {
         return numbers.count == 3 ? numbers : nil
     }
 
-    func message(installed: String) -> String {
+    func message(installed: String, architecture: Architecture = .current) -> String {
         guard !draft, !prerelease, let latest = Self.version(tag_name), let current = Self.version(installed) else {
             return L("发布版本无法识别，请打开发布页")
         }
@@ -29,7 +41,7 @@ struct ReleaseUpdate: Decodable {
             return current == latest ? L("已是最新版本 %@", installed) : L("当前 %@ 比正式版 %@ 更新", installed, tag_name)
         }
         let version = tag_name.hasPrefix("v") ? String(tag_name.dropFirst()) : tag_name
-        let name = "Remote-Vibe-\(version)-App-AppleSilicon.zip"
+        let name = "Remote-Vibe-\(version)-App-\(architecture.rawValue).zip"
         guard assets.contains(where: { $0.name == name && $0.state == "uploaded" && $0.size > 0 }) else {
             return L("发现 %@，下载包尚未就绪", tag_name)
         }

@@ -1,11 +1,12 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h}"
+source Scripts/build-target.sh
 mkdir -p build
 build_stage=$(mktemp -d "$PWD/build/stage.XXXXXX")
 app="$build_stage/Remote Vibe.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-xcrun swiftc -swift-version 5 -parse-as-library -O -target arm64-apple-macos15.0 \
+xcrun swiftc -swift-version 5 -parse-as-library -O -target "$remote_vibe_swift_target" \
   Sources/Bluetooth/ATVVProtocol.swift Sources/Audio/ADPCMDecoder.swift Sources/Bluetooth/ATVVError.swift \
   Sources/App/Localization.swift Sources/Bluetooth/RemoteProfile.swift Sources/Audio/RemoteAudioSession.swift Sources/Bluetooth/BluetoothRemote.swift Sources/Bluetooth/RemoteController.swift Sources/Input/XiaomiVoiceKeyOverride.swift \
   Sources/Input/FnKey.swift Sources/Audio/VirtualMicrophone.swift Sources/Audio/VoiceSessionTiming.swift \

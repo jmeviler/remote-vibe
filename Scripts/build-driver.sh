@@ -1,11 +1,12 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h}"
+source Scripts/build-target.sh
 mkdir -p build
 stage=$(mktemp -d "$PWD/build/driver.XXXXXX")
 bundle="$stage/RemoteVibeMic.driver"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-xcrun clang -arch arm64 -mmacosx-version-min=15.0 -bundle -fblocks -O2 \
+xcrun clang -arch "$remote_vibe_arch" -mmacosx-version-min=15.0 -bundle -fblocks -O2 \
   '-DkDriver_Name="RemoteVibeMic"' '-DkPlugIn_BundleID="local.ben.RemoteVibeMic"' \
   '-DkDevice_Name="Chromecast Mic"' -DkHas_Driver_Name_Format=false \
   -DkNumber_Of_Channels=1 -DkSampleRates=48000 -DkEnableVolumeControl=false \
@@ -28,7 +29,7 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 PLIST
 mkdir -p "$bundle/Contents/Resources/Driver" "$bundle/Contents/Resources/Scripts"
 cp Driver/LICENSE Driver/SOURCE.md Driver/RemoteVibeMic.c "$bundle/Contents/Resources/Driver/"
-cp Scripts/build-driver.sh "$bundle/Contents/Resources/Scripts/"
+cp Scripts/build-driver.sh Scripts/build-target.sh "$bundle/Contents/Resources/Scripts/"
 codesign --force --sign - --timestamp=none "$bundle"
 codesign --verify --deep --strict "$bundle"
 if [[ -d build/RemoteVibeMic.driver ]]; then

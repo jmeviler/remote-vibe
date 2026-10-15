@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h}"
+source Scripts/build-target.sh
 [[ -z "$(git status --porcelain)" ]] || { print -u2 'Commit changes before packaging so bundled source matches the build.'; exit 1; }
 app='build/Remote Vibe.app'
 driver='build/RemoteVibeMic.driver'
@@ -8,11 +9,17 @@ driver='build/RemoteVibeMic.driver'
 [[ "$(cat "$app/Contents/Resources/Source-Commit.txt")" == "$(git rev-parse HEAD)" ]] || { print -u2 'Rebuild the app after committing, then package again.'; exit 1; }
 cmp Driver/RemoteVibeMic.c "$driver/Contents/Resources/Driver/RemoteVibeMic.c"
 cmp Scripts/build-driver.sh "$driver/Contents/Resources/Scripts/build-driver.sh"
+cmp Scripts/build-target.sh "$driver/Contents/Resources/Scripts/build-target.sh"
+for binary in "$app/Contents/MacOS/RemoteVibe" "$driver/Contents/MacOS/RemoteVibeMic"; do
+  [[ "$(/usr/bin/lipo -archs "$binary")" == "$remote_vibe_arch" ]] || {
+    print -u2 "Architecture mismatch: expected $remote_vibe_arch in $binary"; exit 1
+  }
+done
 /usr/bin/codesign --verify --deep --strict "$app"
 /usr/bin/codesign --verify --deep --strict "$driver"
 version=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Contents/Info.plist")
 stage=$(/usr/bin/mktemp -d "$PWD/build/share.XXXXXX")
-name="Remote-Vibe-$version-Mac-AppleSilicon"
+name="Remote-Vibe-$version-Mac-$remote_vibe_chip"
 share="$stage/$name"
 mkdir -p "$share/源码与许可证" "$stage/payload/Applications" "$stage/payload/Library/Audio/Plug-Ins/HAL" "$stage/install-scripts" "$stage/uninstall-scripts" "$stage/resources"
 /usr/bin/ditto "$app" "$stage/payload/Applications/Remote Vibe.app"
@@ -26,23 +33,26 @@ cp LICENSE Docs/THIRD_PARTY_NOTICES.md "$share/源码与许可证/"
 git archive --format=zip HEAD -o "$share/源码与许可证/remote-vibe-source.zip"
 git rev-parse HEAD > "$share/源码与许可证/源代码版本.txt"
 /usr/bin/pkgbuild --analyze --root "$stage/payload" "$stage/components.plist"
-python3 - "$stage" "$version" <<'PY'
+python3 - "$stage" "$version" "$remote_vibe_arch" "$remote_vibe_chip" <<'PY'
 import pathlib, plistlib, sys, html
 root = pathlib.Path(sys.argv[1]); version = sys.argv[2]
+arch, chip = sys.argv[3:5]
+preinstall = root/'install-scripts/preinstall'
+preinstall.write_text(preinstall.read_text().replace('@REMOTE_VIBE_ARCH@', arch))
 p = root/'components.plist'
 items = plistlib.loads(p.read_bytes())
 for item in items:
     item['BundleIsRelocatable'] = False
     item['BundleHasStrictIdentifier'] = True
 p.write_bytes(plistlib.dumps(items))
-for name, text in [('welcome', 'Remote Vibe '+version+'\n\n支持 M 系列芯片 Mac，macOS 15 或更新。\n支持 Google Chromecast 和小米 RC003 遥控器。\n\n包含 App 和语音组件，无需编译。\n识别依赖微信已有的“长按 Fn 全局语音输入”。\n首次使用仍需本人允许蓝牙、辅助功能等系统权限。\n\n安装会重启系统音频服务，声音可能短暂中断。\n已有旧版时，请先退出 App 并使用配套卸载包。'), ('conclusion', '安装完成\n\n请打开“应用程序 → Remote Vibe”，选择遥控器型号。\n按 App 提示允许权限，然后启用微信长按 Fn 语音输入。\n\n首次使用的完整步骤、常见问题和卸载方法，见压缩包内“0-开始使用.txt”。')]:
+for name, text in [('welcome', 'Remote Vibe '+version+'\n\n适用于 '+chip+' Mac，macOS 15 或更新。\n支持 Google Chromecast 和小米 RC003 遥控器。\n\n包含 App 和语音组件，无需编译。\n识别依赖微信已有的“长按 Fn 全局语音输入”。\n首次使用仍需本人允许蓝牙、辅助功能等系统权限。\n\n安装会重启系统音频服务，声音可能短暂中断。\n已有旧版时，请先退出 App 并使用配套卸载包。'), ('conclusion', '安装完成\n\n请打开“应用程序 → Remote Vibe”，选择遥控器型号。\n按 App 提示允许权限，然后启用微信长按 Fn 语音输入。\n\n首次使用的完整步骤、常见问题和卸载方法，见压缩包内“0-开始使用.txt”。')]:
     (root/'resources'/f'{name}.html').write_text('<html><head><meta charset="utf-8"></head><body style="font-family: -apple-system; font-size:14px"><pre style="font-family:inherit;white-space:pre-wrap">'+html.escape(text)+'</pre></body></html>')
 distribution = f'''<?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
  <title>安装 Remote Vibe {version}</title>
  <welcome file="welcome.html" mime-type="text/html"/>
  <conclusion file="conclusion.html" mime-type="text/html"/>
- <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
+ <options customize="never" require-scripts="false" hostArchitectures="{arch}"/>
  <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>
  <volume-check><allowed-os-versions><os-version min="15.0"/></allowed-os-versions></volume-check>
  <choices-outline><line choice="main"/></choices-outline>
@@ -79,8 +89,8 @@ mkdir -p "$update"
 /usr/bin/ditto "$app" "$update/Remote Vibe.app"
 cp Installer/Update-README.txt "$update/Update-README.txt"
 git rev-parse HEAD > "$update/Source-Commit.txt"
-update_archive="$PWD/build/share/Remote-Vibe-$version-App-AppleSilicon.zip"
+update_archive="$PWD/build/share/Remote-Vibe-$version-App-$remote_vibe_chip.zip"
 [[ ! -e "$update_archive" ]] || { print -u2 "Already exists: $update_archive"; exit 1; }
 /usr/bin/ditto -c -k "$update" "$update_archive"
-(cd build/share && /usr/bin/shasum -a 256 "${archive:t}" "${update_archive:t}" > SHA256SUMS.txt)
+(cd build/share && /usr/bin/shasum -a 256 "${archive:t}" "${update_archive:t}" > "SHA256SUMS-$remote_vibe_chip.txt")
 print "App update archive: $update_archive"

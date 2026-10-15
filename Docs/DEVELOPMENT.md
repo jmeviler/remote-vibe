@@ -42,6 +42,7 @@ zsh Scripts/package.sh
 - `RemoteAudioSession.swift`：物理语音键与 Google 普通键开麦的会话、超时、尾音及取消处理。
 - `RemoteController.swift`、`RemoteProfile.swift`：单只遥控器的型号选择和切换。
 - `BluetoothRemote.swift`、`ATVVProtocol.swift`、`ADPCMDecoder.swift`：蓝牙语音连接与分型号解码，Google 保留原参数。
+- `BluetoothTimers.swift`：蓝牙扫描、初始化和重连的一次性计时；在菜单跟踪模式中继续运行，替换、取消及销毁时清理旧回调。
 - `XiaomiVoiceKeyOverride.swift`：只在小米语音就绪时临时屏蔽其原始 F5，退出或切换时恢复。
 - `FnKey.swift`、`VirtualMicrophone.swift`：Fn 按键和音频输入。
 

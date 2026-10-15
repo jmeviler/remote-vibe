@@ -16,9 +16,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private let audio: RemoteAudioSession
     private var proto: ATVVProtocol { audio.proto }
     private var modelConfirmed = false
-    private var reconnect: Timer?
-    private var scanTimeout: Timer?
-    private var connectionTimeout: Timer?
+    private let timers = BluetoothTimers()
     private var retryCount = 0
     private var rememberedKey: String { "voicePeripheral.\(profile.rawValue).v1" }
     var scanning: Bool { central?.isScanning == true }
@@ -55,8 +53,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     func shutdown() {
         stopping = true
         audio.reset()
-        reconnect?.invalidate()
-        connectionTimeout?.invalidate()
+        timers.cancelAll()
         stopScanning()
         if let peripheral { central?.cancelPeripheralConnection(peripheral) }
     }
@@ -69,12 +66,11 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard !stopping else { return }
         if central.state == .poweredOn { retryCount = 0; findKnown() }
         else {
-            reconnect?.invalidate()
+            timers.cancelAll()
             stopScanning()
             audio.reset()
             command = nil
             peripheral = nil
-            connectionTimeout?.invalidate()
             onStatus(central.state == .unauthorized ? L("请允许蓝牙访问") : L("等待蓝牙开启"))
         }
     }
@@ -101,7 +97,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // Called only by the user's button. Cancelling a pending connection permits a new scan.
     func toggleDiscovery() {
         guard !stopping, !ready, !streaming else { return }
-        reconnect?.invalidate()
+        timers.cancel(.reconnect)
         retryCount = 0
         if scanning {
             stopScanning()
@@ -111,7 +107,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         if let p = peripheral {
             peripheral = nil
             command = nil
-            connectionTimeout?.invalidate()
+            timers.cancel(.initialization)
             central.cancelPeripheralConnection(p)
             onStatus(L("连接等待已取消，可手动扫描遥控器"))
             return
@@ -124,22 +120,21 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         central.scanForPeripherals(withServices: [CBUUID(string: ATVVProtocol.serviceUUID)])
         scanStarts += 1
         onStatus(L("正在扫描所选型号（最多 20 秒），请唤醒遥控器"))
-        scanTimeout = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self] _ in
-            guard let self else { return }
+        timers.schedule(.scan, after: 20) { [weak self] in
+            guard let self, !self.stopping, self.scanning, self.peripheral == nil else { return }
             self.stopScanning()
             self.onStatus(L("未找到遥控器，扫描已停止；请检查配对后手动重试"))
         }
     }
 
     private func stopScanning() {
-        scanTimeout?.invalidate()
-        scanTimeout = nil
+        timers.cancel(.scan)
         if scanning { central.stopScan() }
     }
 
     private func connect(_ p: CBPeripheral) {
         stopScanning()
-        reconnect?.invalidate()
+        timers.cancel(.reconnect)
         peripheral = p
         p.delegate = self
         onStatus(L("正在等待遥控器连接，按键可唤醒"))
@@ -155,9 +150,8 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard p === peripheral, !stopping else { return }
         // Let CoreBluetooth wait for a sleeping known remote without an App polling loop.
         // Only the connected device's ATVV initialization has a timeout.
-        connectionTimeout?.invalidate()
-        connectionTimeout = Timer.scheduledTimer(withTimeInterval: 15, repeats: false) { [weak self] _ in
-            guard let self, !self.ready, let p = self.peripheral else { return }
+        timers.schedule(.initialization, after: 15) { [weak self, weak p] in
+            guard let self, let p, !self.stopping, self.peripheral === p, !self.ready else { return }
             self.central.cancelPeripheralConnection(p)
         }
         onStatus(L("正在初始化遥控器语音"))
@@ -174,10 +168,10 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private func disconnected() {
         command = nil
         peripheral = nil
-        connectionTimeout?.invalidate()
+        timers.cancel(.initialization)
         audio.reset()
         guard !stopping, central.state == .poweredOn else { return }
-        reconnect?.invalidate()
+        timers.cancel(.reconnect)
         guard UserDefaults.standard.string(forKey: rememberedKey) != nil, retryCount < 3 else {
             onStatus(L("连接未就绪，请检查配对后手动重试"))
             return
@@ -185,7 +179,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         let delay: TimeInterval = [2, 10, 30][retryCount]
         retryCount += 1
         onStatus(L("遥控器已断开，等待已记住的设备重连"))
-        reconnect = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in self?.findKnown() }
+        timers.schedule(.reconnect, after: delay) { [weak self] in self?.findKnown() }
     }
 
     func peripheral(_ p: CBPeripheral, didDiscoverServices error: Error?) {
@@ -249,7 +243,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
                 audio.ready = true
                 retryCount = 0
                 UserDefaults.standard.set(p.identifier.uuidString, forKey: rememberedKey)
-                connectionTimeout?.invalidate()
+                timers.cancel(.initialization)
                 if profile == .chromecast, let close = try? proto.micCloseCommand(streamID: 0) { write(close) }
                 onStatus(L("遥控器已连接"))
             } catch { onStatus(error.localizedDescription) }

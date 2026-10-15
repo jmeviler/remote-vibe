@@ -8,7 +8,7 @@ app="$build_stage/Remote Vibe.app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 xcrun swiftc -swift-version 5 -parse-as-library -O -target "$remote_vibe_swift_target" \
   Sources/Bluetooth/ATVVProtocol.swift Sources/Audio/ADPCMDecoder.swift Sources/Bluetooth/ATVVError.swift \
-  Sources/App/Localization.swift Sources/Bluetooth/RemoteProfile.swift Sources/Audio/RemoteAudioSession.swift Sources/Bluetooth/BluetoothRemote.swift Sources/Bluetooth/RemoteController.swift Sources/Input/XiaomiVoiceKeyOverride.swift \
+  Sources/App/Localization.swift Sources/Bluetooth/RemoteProfile.swift Sources/Audio/RemoteAudioSession.swift Sources/Bluetooth/BluetoothTimers.swift Sources/Bluetooth/BluetoothRemote.swift Sources/Bluetooth/RemoteController.swift Sources/Input/XiaomiVoiceKeyOverride.swift \
   Sources/Input/FnKey.swift Sources/Audio/VirtualMicrophone.swift Sources/Audio/VoiceSessionTiming.swift \
   Sources/Input/MousePointer.swift Sources/Input/DesktopActions.swift Sources/Input/ClipboardPaste.swift Sources/Input/ButtonGesture.swift Sources/Input/ActionCatalog.swift Sources/Input/KeyMapping.swift Sources/Input/MappingStore.swift Sources/UI/SettingsUI.swift Sources/UI/KeyMappingView.swift \
   Sources/Unlock/ComboUnlock.swift Sources/UI/ComboUnlockView.swift Sources/UI/StatusBarIcon.swift Sources/App/ReleaseUpdate.swift Sources/App/AppController.swift \

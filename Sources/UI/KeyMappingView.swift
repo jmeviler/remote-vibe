@@ -134,6 +134,8 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         modePicker.segmentCount = 2
         modePicker.setLabel(L("普通键位"), forSegment: 0)
         modePicker.setLabel(L("鼠标键位"), forSegment: 1)
+        // This control sits on the dark stage, outside the light inspector theme.
+        modePicker.appearance = NSAppearance(named: .darkAqua)
         modePicker.segmentStyle = .separated
         modePicker.segmentDistribution = .fillEqually
         modePicker.selectedSegmentBezelColor = SettingsTheme.forest

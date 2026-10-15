@@ -1,29 +1,27 @@
-Remote Vibe 0.4.6 · 简体中文 / English · Apple Silicon · macOS 15+
+Remote Vibe 0.4.7 · 简体中文 / English · Apple Silicon · macOS 15+
 
-- 音频设备失效或系统音频服务重启后自动重建连接；开麦失败最多重建并重试一次。录音中断后取消本次语音，等待重新按键。
-- 修复展开菜单时语音准备和收尾可能暂停的问题，及时释放 Fn 并恢复原麦克风。
-- 配置逐键容错，保存前保留有效备份或损坏原文。菜单栏「键位配置」支持导出已保存键位、导入草稿和载入有效备份；导入与恢复后仍需点击「保存并生效」。
-- 增加本地语音耗时、缓存峰值、缓冲溢出和排空超时诊断，不记录音频或识别文字。语音等待参数保持原值。
-- 音频恢复、菜单收尾、配置备份与导入导出测试，以及已有驱动测试纳入 CI。
+- 菜单栏改为透明图标，分别显示普通、语音中和鼠标模式；语音状态优先显示，悬停提示和辅助功能标签保留状态文字。
+- 提供普通屏与 Retina 图标，由 macOS 适配深浅色菜单栏。图标缓存复用，随状态变化更新，没有新增轮询或动画。
+- 修复深色遥控器卡片上「普通键位 / 鼠标键位」未选中文字过暗的问题，两种选中状态都清晰可读。
 
 **下载选择**
 
-- 首次安装：`Remote-Vibe-0.4.6-Mac-AppleSilicon.zip`，包含 App、语音组件、使用说明和对应源码。
-- 已安装语音组件：`Remote-Vibe-0.4.6-App-AppleSilicon.zip`。退出 App、备份旧 App 后替换原位置；沿用现有驱动，无需重启音频服务。
+- 首次安装：`Remote-Vibe-0.4.7-Mac-AppleSilicon.zip`，包含 App、语音组件、使用说明和对应源码。
+- 已安装语音组件：`Remote-Vibe-0.4.7-App-AppleSilicon.zip`。退出 App、备份旧 App 后替换原位置；沿用现有驱动，无需重启音频服务。
 - 在下载目录运行 `shasum -a 256 -c SHA256SUMS.txt` 校验两个 ZIP。
 
-本版已通过隔离的音频恢复与驱动测试、语音协议 / 会话测试、手势 / 鼠标 / 配置测试、中英文 UI 检查及完整构建。真实遥控器与微信出字尚未在本版重新实测。
+本版界面已在本机安装确认；图标资源加载、普通屏 / Retina 尺寸与两种键位选择状态已检查。自动化测试、完整构建与打包通过。真实遥控器与微信出字尚未在本版重新实测。
 
 当前为未经过 Apple 公证的试用构建。语音识别仍依赖微信全局 Fn 语音输入；语音期间会临时切换系统默认麦克风。
 
 ---
 
-This update rebuilds the audio connection after a device failure or an audio-service restart, retries a failed microphone start once, and cancels interrupted recordings until the next button press. Voice preparation and cleanup continue while the menu is open.
+The menu bar now uses transparent icons for normal, speaking and mouse modes, with speaking taking priority. Tooltips and accessibility labels retain the status text.
 
-Bindings now recover per button and preserve a valid backup or the original damaged data before saving. The **Binding Configurations** menu exports saved normal/mouse bindings, imports a draft, and loads the last valid backup. Review imported or restored drafts and click **Save and Apply**.
+Standard and Retina assets adapt to light and dark menu bars through macOS template rendering. Images are cached and updated when the state changes, with no added polling or animation.
 
-Local diagnostics include session timings, peak buffering, overflow and drain timeouts, without recording audio or recognized text. Existing voice delay values are unchanged. Audio recovery, menu cleanup, configuration and driver tests now run in CI.
+Fixed unreadable unselected text in the **Normal bindings / Mouse bindings** selector on the dark remote card. Both selection states are now readable.
 
 **Downloads:** use `Mac-AppleSilicon.zip` for first setup, or `App-AppleSilicon.zip` to replace only the app after quitting and backing it up. The driver is unchanged. Verify downloads with `SHA256SUMS.txt`.
 
-Automated checks and the full build passed. Physical remote and WeChat transcription tests have not been repeated for this version. Trial build: ad hoc signed, not Apple-notarized. Recognition requires WeChat global hold-Fn input; voice temporarily changes the default input device.
+The interface was installed and visually confirmed on a local Mac. Bundled icon loading, standard/Retina sizes and both binding selection states were checked. Automated tests, the full build and packaging passed. Physical remote and WeChat transcription tests have not been repeated for this version. Trial build: ad hoc signed, not Apple-notarized. Recognition requires WeChat global hold-Fn input; voice temporarily changes the default input device.

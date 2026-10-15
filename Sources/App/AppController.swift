@@ -61,7 +61,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         mapping.onMouseModeChange = { [weak self] in
             guard let self else { return }
             self.mappingView.refreshStatus()
-            self.updateStatusTitle()
+            self.updateStatusItem()
             self.writeStatus()
         }
         mapping.onFnChange = { [weak self] in self?.refreshReadiness(); self?.writeStatus() }
@@ -144,7 +144,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         remotePicker.isEnabled = false
         updateDiscoveryButton()
         mapping.cancelPendingActions()
-        item.button?.title = L("● 语音")
+        updateStatusItem()
         message.stringValue = L("正在准备微信语音输入…")
         // Change the input before Fn starts WeChat's capture session.
         voiceSchedule.after(0.2) { [weak self] in
@@ -195,7 +195,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
                     self.updateDiscoveryButton()
                     self.completedSessions += 1
                     self.refreshReadiness()
-                    self.updateStatusTitle()
+                    self.updateStatusItem()
                     self.message.stringValue = L("本次语音已结束；可以继续按住语音键说话。")
                     self.writeStatus()
                 }
@@ -214,12 +214,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         scheduleMaintenance()
         remotePicker.isEnabled = true
         updateDiscoveryButton()
-        updateStatusTitle()
+        updateStatusItem()
         refreshReadiness(); writeStatus()
     }
 
-    private func updateStatusTitle() {
-        item.button?.title = active ? L("● 语音") : mapping.mouseModeActive ? L("遥控语音 · 鼠标") : L("遥控语音")
+    private func updateStatusItem() {
+        guard let button = item?.button else { return }
+        let icon: StatusBarIcon = active ? .speaking : mapping.mouseModeActive ? .mouse : .normal
+        button.title = ""
+        button.image = icon.image
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
+        button.toolTip = icon.label
+        button.setAccessibilityLabel(icon.label)
     }
 
     private func refresh() {
@@ -296,8 +303,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         }
         mainMenu.addItem(withTitle: L("编辑"), action: nil, keyEquivalent: "").submenu = editMenu
         NSApplication.shared.mainMenu = mainMenu
-        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        updateStatusTitle()
+        item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        updateStatusItem()
         let menu = NSMenu()
         menu.addItem(withTitle: "Remote Vibe \(version) (\(build))", action: nil, keyEquivalent: "")
         menu.addItem(withTitle: L("打开遥控语音"), action: #selector(show), keyEquivalent: "")

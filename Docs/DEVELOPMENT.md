@@ -2,27 +2,25 @@
 
 项目简介见 [README](../README.md)；默认键位、权限、手势设置和卸载方法见 [安装与使用说明](../Installer/开始使用.txt)。
 
-以下命令从仓库根目录执行。脚本自身也按所在位置定位根目录，支持通过绝对路径调用。
+编译、测试程序构建和打包统一在 GitHub Actions 云端 Mac 执行，流程见 [发布与更新](RELEASING.md)。本机用于源码编辑、静态检查、下载校验，以及按需安装预览。以下构建命令是云端 runner 使用的命令，从仓库根目录执行。
 
 ```sh
 zsh Scripts/build-app.sh
-open "build/Remote Vibe.app"
 ```
 
-点击菜单栏「遥控语音 → 打开遥控语音」进入设置，选择当前使用的 Google 或小米 RC003，一次使用一只。两种型号均采用按住 Fn 的微信语音输入流程。配置图随型号切换，两种均可选择图上的按键、选择动作并保存，各自的配置和草稿独立保留。
+从 Actions 产物或 Release 下载 App 后，在本机安装预览。点击菜单栏图标 →「打开遥控语音」进入设置，选择当前使用的 Google 或小米 RC003，一次使用一只。两种型号均采用按住 Fn 的微信语音输入流程。配置图随型号切换，两种均可选择图上的按键、选择动作并保存，各自的配置和草稿独立保留。
 
 ## 语音组件与打包
 
-仅按键映射无需安装驱动。首次使用遥控器语音时，构建并安装组件：
+仅按键映射无需安装驱动。首次使用遥控器语音时，下载 Release 完整安装包并按说明安装；云端构建组件的命令为：
 
 ```sh
 zsh Scripts/build-driver.sh
-sudo zsh Scripts/install-driver.sh
 ```
 
 安装会重启系统音频服务；已有同名组件时拒绝覆盖。微信输入设备应选择系统默认输入或 `Chromecast Mic`。卸载组件使用 `sudo zsh Scripts/uninstall-driver.sh`，退出 App 后执行，组件会备份到 `build/disabled/`。
 
-修改完成后先提交源码，再生成分享包，确保包内源码归档对应当前 Git 提交：
+修改完成后先提交源码，由 GitHub Actions 生成分享包，确保包内源码归档对应当前 Git 提交。云端执行：
 
 ```sh
 zsh Scripts/build-app.sh
@@ -30,7 +28,7 @@ zsh Scripts/build-driver.sh
 zsh Scripts/package.sh
 ```
 
-输出位于 `build/share/`，包含完整安装 ZIP、独立 App 更新 ZIP 和校验文件。打包不执行安装。发布步骤见 [发布与更新](RELEASING.md)。
+输出位于 runner 的 `build/share/`，并上传为 `Remote-Vibe-AppleSilicon` Actions 产物，包含完整安装 ZIP、独立 App 更新 ZIP 和校验文件。打包不执行安装。发布步骤见 [发布与更新](RELEASING.md)。
 
 ## 实现
 
@@ -51,13 +49,13 @@ zsh Scripts/package.sh
 
 设置页按单击、双击、长按分别编辑；手势使用条件与 Fn 保持规则见安装与使用说明。运行 `zsh Tests/test-button-gestures.sh` 检查时序、旧配置兼容及两种设置页，不触发真实系统按键。
 
-设置窗口支持调整大小，最小为 900 × 640；高度不足时可纵向滚动。运行 `zsh Tests/preview-design.sh round-3` 生成两种遥控器、连招页、编辑与禁用状态，以及 900 / 1080 / 1280 宽度的本机预览，输出到 `build/design/round-3/`。预览使用真实视图和隔离的示例状态，不连接蓝牙、不写入用户配置、不访问钥匙串。三轮检查记录见 [DESIGN-REVIEW.md](DESIGN-REVIEW.md)。
+设置窗口支持调整大小，最小为 900 × 640；高度不足时可纵向滚动。如需截图预览，在云端 macOS job 运行 `zsh Tests/preview-design.sh round-3`，生成两种遥控器、连招页、编辑与禁用状态，以及 900 / 1080 / 1280 宽度的预览；将 `build/design/round-3/` 上传为产物后下载查看。预览使用真实视图和隔离的示例状态，不连接蓝牙、不写入用户配置、不访问钥匙串。三轮历史检查记录见 [DESIGN-REVIEW.md](DESIGN-REVIEW.md)。
 
 0.4.0 的分类动作库同时支持打开用户选择的 `.app` 与 HTTP(S) 网页；参数按手势保存。系统快捷键遵循当前 Mac 和目标软件设置，亮度 / 音量 / 媒体控制遵循设备与播放器支持。
 
 窗口清单在串行队列按需读取，辅助功能调用有超时。公开 AX 窗口通过进程和位置与当前可见 CG 窗口唯一匹配，不使用私有窗口 ID 接口或屏幕录制。执行前复核前台窗口、屏幕和映射状态；语音开始、保存配置或断开连接会取消待执行的切换。
 
-构建前一版 App 自动保存在本机 `build/Remote Vibe.previous.*.app`。编译产物与备份不纳入源码发布。
+构建脚本会将工作目录内的前一版 App 保存在 `build/Remote Vibe.previous.*.app`；GitHub runner 通常从干净检出开始。本机安装云端 App 前另行备份旧 App。编译产物与备份不纳入源码发布。
 
 回退到旧版时应同时恢复该版本的配置快照：旧版不认识新增动作类型。可用 `defaults export local.ben.RemoteVibe 路径.plist` 备份偏好，在退出 App 后用 `defaults import local.ben.RemoteVibe 路径.plist` 恢复，再运行对应旧构建。
 

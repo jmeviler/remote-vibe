@@ -2,6 +2,8 @@
 
 分发使用 GitHub Releases。App 只在用户点“检查更新”时查询本仓库最新正式 Release，比较版本并检查 App 下载包是否就绪。结果显示在菜单中；下载、退出 App 和替换文件由用户完成。没有后台轮询或自动安装。
 
+App、语音驱动、测试程序和多架构验证的编译、打包统一使用 GitHub Actions 云端 Mac。本机只编辑源码、做无需编译的静态检查、下载校验产物和按需安装预览，不执行本机构建或打包。
+
 ## 维护者发布一次新版
 
 1. 修改 `Resources/Info.plist` 的版本号和递增构建号，更新 `Docs/RELEASE-NOTES.md`，提交 PR。
@@ -23,9 +25,13 @@
 
 App 更新包适用于已安装当前语音组件的用户，未来若驱动变化，需另行说明升级要求。开发版用户应替换实际运行路径，避免同时保留两个正在使用的副本。
 
-## 本地打包
+## 云端构建与产物校验
 
-先提交源码，再运行开发说明中的构建与打包命令。`Scripts/package.sh` 要求工作树干净；ZIP 内的源码和提交记录对应 `HEAD`。打包不会安装驱动或启动 App。
+PR 和 main 的构建由 `.github/workflows/build.yml` 自动运行；需要正式发布草稿时，在 main 上触发同一工作流并启用 `draft_release`。`Scripts/package.sh` 在 runner 的干净工作树中执行；ZIP 内的源码和提交记录对应工作流的 `HEAD`。打包不会安装驱动或启动 App。
+
+检查云端测试与打包成功后，下载 Actions 产物或 Release 草稿附件。校验 SHA256、ZIP 完整性、版本 / 构建号、`Source-Commit.txt`、App / 驱动签名及资源是否齐全。下载到本机校验不重新编译。已获得发布指令时，校验完成后直接合并和发布，无需再请求一次确认。
+
+多架构方案见 [Intel 与通用包研究](MULTI-ARCH.md)；当前正式版仍仅支持 Apple Silicon / macOS 15+。
 
 目前仅构建 Apple Silicon / macOS 15+。App 与驱动使用临时本机签名，安装包尚未使用 Developer ID 签名，也未经过 Apple 公证。GitHub Releases 提供分发，不代替 Apple 公证；面向更广泛用户分发前，可再接入 Apple Developer 证书与公证流程。
 

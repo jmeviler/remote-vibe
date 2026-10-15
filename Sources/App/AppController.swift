@@ -31,9 +31,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private var active = false
     private var released = false
     private var drainStarted = false
-    private var drainTimer: Timer?
+    private let voiceSchedule = VoiceSessionSchedule()
+    private var voiceTiming = VoiceSessionTiming()
+    private var drainTimedOut = false
     private var poll: Timer?
-    private var endedAt = Date()
     private var completedSessions = 0
     private var fnDowns = 0
     private var fnUps = 0
@@ -49,6 +50,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         try? FileManager.default.createDirectory(at: statusURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         buildUI()
         updateRemoteUI()
+        mic.onUnavailable = { [weak self] in
+            guard let self, !self.stopping else { return }
+            self.remote.cancelVoice(); self.abort()
+            self.message.stringValue = L("音频设备已变化，本次语音已取消；请重新按住语音键")
+            self.writeStatus()
+        }
+        mic.onAvailabilityChange = { [weak self] in self?.refreshReadiness(); self?.writeStatus() }
         mapping.onDeviceChange = { [weak self] in self?.refresh() }
         mapping.onMouseModeChange = { [weak self] in
             guard let self else { return }
@@ -99,7 +107,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             return true
         }
         remote.onBegin = { [weak self] in self?.begin() }
-        remote.onSamples = { [weak self] values, rate in self?.mic.feed(values, rate: rate) }
+        remote.onSamples = { [weak self] values, rate in
+            guard let self else { return }
+            if self.active && !values.isEmpty { self.voiceTiming.mark("firstSamples", at: ProcessInfo.processInfo.systemUptime) }
+            self.mic.feed(values, rate: rate)
+        }
         remote.onEnd = { [weak self] normal in self?.end(normal) }
         remote.start()
         for name in [NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification, NSWorkspace.sessionDidResignActiveNotification] {
@@ -116,7 +128,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         guard !unlock.blocksActions else { remote.cancelVoice(); message.stringValue = L("锁屏或连招录入期间暂停语音"); return }
         if active { remote.cancelVoice(); abort(); message.stringValue = L("请等上一段结束后再说话"); return }
         guard AXIsProcessTrusted() else { remote.cancelVoice(); message.stringValue = L("请先允许模拟 Fn 按键"); return }
-        guard mic.begin() else { remote.cancelVoice(); message.stringValue = L("请先完成麦克风组件安装"); return }
+        voiceTiming.begin(at: ProcessInfo.processInfo.systemUptime)
+        drainTimedOut = false
+        guard mic.begin() else {
+            voiceTiming.finish(at: ProcessInfo.processInfo.systemUptime, cancelled: true)
+            remote.cancelVoice(); message.stringValue = L("语音组件暂不可用，请检查安装或稍后重试")
+            refreshReadiness(); writeStatus(); return
+        }
+        voiceTiming.mark("microphoneStarted", at: ProcessInfo.processInfo.systemUptime)
+        voiceSchedule.cancel()
         sessionID = UUID()
         let id = sessionID
         active = true; released = false; drainStarted = false
@@ -127,16 +147,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         item.button?.title = L("● 语音")
         message.stringValue = L("正在准备微信语音输入…")
         // Change the input before Fn starts WeChat's capture session.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        voiceSchedule.after(0.2) { [weak self] in
             guard let self, self.sessionID == id, self.active, !self.released else { return }
             guard self.fn.down() else { self.remote.cancelVoice(); self.abort(); self.message.stringValue = L("Fn 已被按住或没有权限，请重试"); return }
             self.fnDowns += 1
+            self.voiceTiming.mark("fnDown", at: ProcessInfo.processInfo.systemUptime)
             self.message.stringValue = L("正在说话 · 松开当前按键结束")
             // Retain the first syllables while WeChat opens its microphone.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { [weak self] in
+            self.voiceSchedule.after(0.55) { [weak self] in
                 guard let self, self.sessionID == id, self.active else { return }
                 self.drainStarted = true
                 self.mic.startDraining()
+                self.voiceTiming.mark("drainStarted", at: ProcessInfo.processInfo.systemUptime)
             }
         }
         refreshReadiness(); writeStatus()
@@ -144,43 +166,50 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
 
     private func end(_ normal: Bool) {
         guard active else { return }
-        guard normal, fn.held else { abort(); return }
+        guard normal else { abort(); return }
+        guard !released else { return }
+        guard fn.held else { abort(); return }
         released = true
-        endedAt = Date()
+        voiceTiming.mark("audioStopped", at: ProcessInfo.processInfo.systemUptime)
         message.stringValue = L("正在结束，文字由微信生成…")
-        drainTimer?.invalidate()
         let id = sessionID
-        drainTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] timer in
-            guard let self, self.sessionID == id, self.active else { timer.invalidate(); return }
-            if (self.drainStarted && self.mic.pendingFrames == 0) || Date().timeIntervalSince(self.endedAt) > 4 {
-                timer.invalidate()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        voiceSchedule.waitForDrain(ready: { [weak self] in
+            guard let self else { return true }
+            return self.drainStarted && self.mic.pendingFrames == 0
+        }, completion: { [weak self] timedOut in
+            guard let self, self.sessionID == id, self.active else { return }
+            self.drainTimedOut = timedOut
+            self.voiceTiming.mark("drainFinished", at: ProcessInfo.processInfo.systemUptime)
+            self.voiceSchedule.after(0.2) { [weak self] in
+                guard let self, self.sessionID == id else { return }
+                if self.fn.held { self.fn.up(); self.fnUps += 1 }
+                self.voiceTiming.mark("fnUp", at: ProcessInfo.processInfo.systemUptime)
+                self.voiceSchedule.after(0.8) { [weak self] in
                     guard let self, self.sessionID == id else { return }
-                    if self.fn.held { self.fn.up(); self.fnUps += 1 }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                        guard let self, self.sessionID == id else { return }
-                        self.mic.end()
-                        self.active = false
-                        self.scheduleMaintenance()
-                        self.remotePicker.isEnabled = true
-                        self.updateDiscoveryButton()
-                        self.completedSessions += 1
-                        self.refreshReadiness()
-                        self.updateStatusTitle()
-                        self.message.stringValue = L("本次语音已结束；可以继续按住语音键说话。")
-                        self.writeStatus()
-                    }
+                    self.mic.end()
+                    self.active = false
+                    self.voiceTiming.finish(at: ProcessInfo.processInfo.systemUptime, cancelled: false)
+                    self.voiceSchedule.cancel()
+                    self.scheduleMaintenance()
+                    self.remotePicker.isEnabled = true
+                    self.updateDiscoveryButton()
+                    self.completedSessions += 1
+                    self.refreshReadiness()
+                    self.updateStatusTitle()
+                    self.message.stringValue = L("本次语音已结束；可以继续按住语音键说话。")
+                    self.writeStatus()
                 }
             }
-        }
+        })
         writeStatus()
     }
 
     private func abort() {
         sessionID = UUID()
-        drainTimer?.invalidate()
-        if fn.held { fn.up(); fnUps += 1 }
+        voiceSchedule.cancel()
+        if fn.held { fn.up(); fnUps += 1; voiceTiming.mark("fnUp", at: ProcessInfo.processInfo.systemUptime) }
         mic.end()
+        voiceTiming.finish(at: ProcessInfo.processInfo.systemUptime, cancelled: true)
         active = false; released = false
         scheduleMaintenance()
         remotePicker.isEnabled = true
@@ -274,6 +303,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         menu.addItem(withTitle: L("打开遥控语音"), action: #selector(show), keyEquivalent: "")
         menu.addItem(withTitle: L("立即结束本次语音"), action: #selector(stopVoice), keyEquivalent: "")
         menu.addItem(withTitle: L("退出鼠标模式"), action: #selector(exitMouseMode), keyEquivalent: "")
+        let configurations = NSMenu(title: L("键位配置"))
+        for (title, action) in [(L("导入键位到草稿…"), #selector(importMappings)),
+                                (L("导出已保存键位…"), #selector(exportMappings)),
+                                (L("载入上次有效备份"), #selector(restoreMappings))] {
+            configurations.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
+        }
+        menu.addItem(withTitle: L("键位配置"), action: nil, keyEquivalent: "").submenu = configurations
         menu.addItem(.separator())
         menu.addItem(withTitle: L("检查更新…"), action: #selector(checkForUpdates), keyEquivalent: "")
         updateStatus.isHidden = true
@@ -383,9 +419,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if [#selector(importMappings), #selector(exportMappings), #selector(restoreMappings)].contains(menuItem.action) {
+            return !active && !remote.voiceBusy && !unlock.blocksActions && window.attachedSheet == nil
+        }
         if menuItem.action == #selector(exitMouseMode) { return mapping.mouseModeActive }
         return menuItem.action != #selector(checkForUpdates) || updateCheck == nil
     }
+
+    private func showMappings() -> Bool {
+        guard !active, !remote.voiceBusy, !unlock.blocksActions, window.attachedSheet == nil else { return false }
+        pages.selectedSegment = 0; changePage(); show()
+        return true
+    }
+    @objc private func importMappings() { if showMappings() { mappingView.importConfiguration() } }
+    @objc private func exportMappings() { if showMappings() { mappingView.exportConfiguration() } }
+    @objc private func restoreMappings() { if showMappings() { mappingView.restoreConfiguration() } }
 
     @objc private func checkForUpdates() {
         guard updateCheck == nil, !stopping else { return }
@@ -445,6 +493,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             "microphoneReady": mic.available, "recording": remote.streaming,
             "sessionActive": active, "fnHeld": fn.held || mapping.fnHeld, "mappedFnHeld": mapping.fnHeld, "fnDowns": fnDowns, "fnUps": fnUps,
             "audioFrames": remote.frameCount, "fedSamples": mic.fedFrames, "renderedSamples": mic.renderedFrames,
+            "voiceTiming": voiceTiming.diagnostics, "audioBuffer": mic.bufferDiagnostics, "drainTimedOut": drainTimedOut,
             "completedSessions": completedSessions, "status": message.stringValue,
             "voiceSource": remote.sourceName, "voiceProfile": remote.profile.rawValue,
             "voiceProtocol": remote.protocolSummary, "connectionStatus": connection.stringValue,
@@ -454,6 +503,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             "xiaomiVoiceKeyReady": xiaomiVoiceKey.ready, "xiaomiVoiceKeyStatus": xiaomiVoiceKey.status,
             "mouseModeActive": mapping.mouseModeActive,
             "keyMappingStatus": mapping.status, "keyMappingConnected": mapping.connected,
+            "configurationNotice": mapping.configurationNotice ?? "",
             "inputMonitoring": mapping.listeningAllowed,
             "shortcutListener": mapping.listening,
             "keyActionChoices": ActionCatalog.presets.count,
@@ -469,6 +519,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
 
     func applicationWillTerminate(_ notification: Notification) {
         stopping = true
+        mic.onUnavailable = {}; mic.onAvailabilityChange = {}
         updateCheck?.cancel(); updateCheck = nil
         workspaceObservers.forEach { NSWorkspace.shared.notificationCenter.removeObserver($0) }
         workspaceObservers.removeAll()

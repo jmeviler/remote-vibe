@@ -32,6 +32,16 @@ enum ButtonGestureUITest {
         let editor = all.compactMap { $0 as? NSTextView }.first!
         let save = all.compactMap { $0 as? NSButton }.first { $0.title == L("保存并生效") }!
         let reset = all.compactMap { $0 as? NSButton }.first { $0.title == L("恢复此键默认") }!
+        // A valid import becomes an editable draft without writing preferences or
+        // applying HID mappings. Rejected imports preserve that draft.
+        let imported: KeyMapping.Bindings = ["7": .init(singleClick: .init(kind: .text, text: "Imported"))]
+        let archive = try MappingArchive(profile: profile, normal: imported, mouse: [:]).data()
+        try view.importConfiguration(archive)
+        precondition(save.isEnabled && mapping.bindings.isEmpty && mapping.mouseBindings.isEmpty)
+        do { try view.importConfiguration(Data("invalid".utf8)); preconditionFailure("Invalid import accepted") } catch {}
+        precondition(save.isEnabled && mapping.bindings.isEmpty)
+        try view.importConfiguration(MappingArchive(profile: profile, normal: [:], mouse: [:]).data())
+        precondition(!save.isEnabled)
         func choose(_ title: String) {
             precondition(action.itemTitles.contains(title))
             let item = action.itemArray.first { !$0.isSectionHeader && $0.title == title }!

@@ -24,6 +24,7 @@ jobs:
           zsh Tests/test-app-support.sh
           zsh Tests/test-button-gestures.sh
           zsh Tests/test-remote-voice.sh
+          zsh Tests/test-audio-pipeline.sh
       - name: Build and package (Apple Silicon, macOS 15+)
         run: |
           zsh Scripts/build-app.sh

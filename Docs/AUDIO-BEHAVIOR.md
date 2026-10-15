@@ -34,6 +34,8 @@ App 只设置系统默认输入，没有设置默认输出、系统提示音输�
 - 蓝牙耳机可能因自身麦克风启停改变通话模式或音质。本次只验证了路由恢复，未测声学质量或所有蓝牙配置；输出路由不变不等于音质绝对不变。
 - 安装/卸载脚本会重启 `coreaudiod`，可能短暂打断系统播放和录音。这是安装维护行为，正常启动或每次语音都不会执行。本次优化没有重装驱动或重启音频服务。
 
+2026-10-15 的代码补充：App 监听音频服务重启与设备变化，清理失效句柄并重新连接；录音中发生失效会取消本次语音，等待重新按键。开麦失败最多重建并重试一次。原输入暂时消失时保留恢复标记，设备重新出现且系统默认输入仍为虚拟麦克风时重试恢复。上述恢复行为已通过假设备测试，本节前面的本机观察仍是 2026-10-10 的记录，未作为本轮实测结果。
+
 ## 依据
 
 - Apple：[默认输入设备属性](https://developer.apple.com/documentation/coreaudio/kaudiohardwarepropertydefaultinputdevice)、[默认输出设备属性](https://developer.apple.com/documentation/coreaudio/kaudiohardwarepropertydefaultoutputdevice)。本机 SDK `AudioHardware.h` 明确分别定义输入、输出和提示音输出。

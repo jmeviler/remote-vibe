@@ -541,6 +541,58 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         displaySelection()
     }
 
+    // Import/restore changes only the drafts; Save and Apply remains explicit.
+    func importConfiguration(_ data: Data) throws {
+        let archive = try MappingArchive.read(data, for: displayedProfile)
+        normalDrafts = archive.normal; mouseDrafts = archive.mouse
+        displaySelection()
+    }
+
+    func importConfiguration() {
+        guard let window, window.attachedSheet == nil else { return }
+        let profile = displayedProfile
+        let panel = NSOpenPanel()
+        panel.title = L("导入键位到草稿…")
+        panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .OK, let url = panel.url, self.displayedProfile == profile else { return }
+            do {
+                guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+                      size <= MappingArchive.maximumBytes else { throw MappingArchive.Failure.tooLarge }
+                try self.importConfiguration(Data(contentsOf: url))
+                self.liveStatus.stringValue = L("配置已载入草稿，请检查后点击“保存并生效”")
+            } catch { self.liveStatus.stringValue = error.localizedDescription }
+            self.liveStatus.toolTip = self.liveStatus.stringValue
+        }
+    }
+
+    func exportConfiguration() {
+        guard let window, window.attachedSheet == nil else { return }
+        do {
+            let data = try MappingArchive(profile: displayedProfile, normal: mapping.bindings, mouse: mapping.mouseBindings).data()
+            let panel = NSSavePanel()
+            panel.title = L("导出已保存键位…"); panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "Remote-Vibe-\(displayedProfile.rawValue).json"
+            panel.beginSheetModal(for: window) { [weak self] response in
+                guard let self, response == .OK, let url = panel.url else { return }
+                do {
+                    try data.write(to: url, options: .atomic)
+                    self.liveStatus.stringValue = L("已导出此型号的普通键位和鼠标键位")
+                } catch { self.liveStatus.stringValue = error.localizedDescription }
+                self.liveStatus.toolTip = self.liveStatus.stringValue
+            }
+        } catch { liveStatus.stringValue = error.localizedDescription }
+    }
+
+    func restoreConfiguration() {
+        guard let backup = mapping.configurationBackup() else { liveStatus.stringValue = L("暂无可用的配置备份"); return }
+        normalDrafts = backup.normal; mouseDrafts = backup.mouse
+        displaySelection()
+        liveStatus.stringValue = L("配置已载入草稿，请检查后点击“保存并生效”")
+        liveStatus.toolTip = liveStatus.stringValue
+    }
+
     @objc private func resetKey() {
         guard selectedButton != nil, !reservedToggle else { return }
         drafts.removeValue(forKey: String(selected))
@@ -566,13 +618,13 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
                 values[String(button.code)]?.validationMessage(for: mapping.profile).map { "\(button.name)：\($0)" }
             }
         }.first
-        liveStatus.stringValue = invalid ?? (dirty ? L("有未保存的修改") : mapping.status)
+        liveStatus.stringValue = invalid ?? mapping.configurationNotice ?? (dirty ? L("有未保存的修改") : mapping.status)
         liveStatus.toolTip = liveStatus.stringValue
         liveStatus.textColor = invalid == nil ? SettingsTheme.secondary : SettingsTheme.error
         hint.textColor = selectedConfiguration.validationMessage == nil ? SettingsTheme.secondary : SettingsTheme.error
         permissionButton.isHidden = (mapping.listeningAllowed && AXIsProcessTrusted()) ||
             !mapping.buttons.contains { KeyMapping.binding($0, normal: normalDrafts, mouse: mouseDrafts, inMouseMode: editingMouse).usesListener }
         permissionButton.title = !mapping.listeningAllowed ? L("允许输入监控") : L("允许辅助功能")
-        saveButton.isEnabled = invalid == nil && (dirty || mapping.needsApply)
+        saveButton.isEnabled = invalid == nil && (dirty || mapping.needsApply || mapping.configurationNotice != nil)
     }
 }

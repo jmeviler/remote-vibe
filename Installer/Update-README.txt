@@ -1,7 +1,8 @@
 Remote Vibe — 仅更新 App / App-only update
 
-适用于已经安装 Remote Vibe 语音组件的 Apple Silicon Mac（macOS 15+）。
-首次安装请下载同一发布页的 Remote-Vibe-<版本>-Mac-AppleSilicon.zip。
+适用于已经安装对应架构 Remote Vibe 语音组件的 Apple Silicon 或 Intel Mac（macOS 15+）。
+M 系列选择 AppleSilicon 包，Intel 选择 Intel 包；请勿混用。Intel 首次使用请先安装完整包。
+首次安装请下载同一发布页的 Remote-Vibe-<版本>-Mac-AppleSilicon.zip 或 Remote-Vibe-<版本>-Mac-Intel.zip。
 
 1. 等本次语音结束，在菜单栏退出 Remote Vibe。
 2. 将原来的 Remote Vibe.app 复制到其他文件夹作为备份。
@@ -14,8 +15,9 @@ Remote Vibe — 仅更新 App / App-only update
 尚未经过 Apple 公证。首次打开受阻时，在系统“隐私与安全性”检查并允许打开。
 请只从 https://github.com/jmeviler/remote-vibe/releases 下载。
 
-For Apple Silicon Macs running macOS 15+, with the voice component already installed.
-For first-time setup, use Remote-Vibe-<version>-Mac-AppleSilicon.zip from the same release.
+For Apple Silicon or Intel Macs running macOS 15+, with the matching voice component already installed.
+Choose AppleSilicon for M-series Macs or Intel for Intel Macs. Do not mix architectures.
+For first-time setup, use the matching Remote-Vibe-<version>-Mac-AppleSilicon.zip or Remote-Vibe-<version>-Mac-Intel.zip from the same release.
 
 1. Finish speaking and quit Remote Vibe from the menu bar.
 2. Copy the existing Remote Vibe.app to a separate backup folder.

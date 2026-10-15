@@ -3,4 +3,4 @@
 - App、语音驱动、测试程序和多架构验证的编译，以及安装包制作，统一在 GitHub Actions 的云端 macOS runner 执行。
 - 本机用于源码编辑、无需编译的静态检查、下载与校验云端产物，以及用户要求的安装预览。不要在本机运行构建 / 打包脚本或架构交叉编译。
 - 用户要求发布时，完成提交 PR、检查 CI、合并、生成 Release 草稿、校验附件和正式发布；已有发布授权无需再次确认。
-- 发布流程见 `Docs/RELEASING.md`；Intel / 通用包的研究结论见 `Docs/MULTI-ARCH.md`。研究结论不等于已经发布支持。
+- 发布流程见 `Docs/RELEASING.md`；Apple Silicon / Intel 分架构发包规则见 `Docs/MULTI-ARCH.md`。两种芯片分别测试、打包，不生成通用包；保留尚未完成的真机验证说明。

@@ -7,8 +7,9 @@ Remote Vibe — 同事试用包
 
 一、先确认适用条件
 
-• Apple Silicon Mac（M1 / M2 / M3 / M4 等 M 系列），macOS 15 或更新。
-  Intel Mac、Windows，以及 macOS 14 或更早版本不适用。
+• Apple Silicon 或 Intel Mac，macOS 15 或更新。
+  在“关于本机”确认芯片：M1 / M2 / M3 / M4 等 M 系列下载 AppleSilicon 包，Intel 下载 Intel 包。
+  Windows 以及 macOS 14 或更早版本不适用。Intel 版尚未完成真实遥控器与微信语音验证。
 • Google Chromecast Voice Remote，或小米 RC003 蓝牙语音遥控器。
 • 已安装并登录微信，并有可在其他 App 中使用的“长按 Fn 语音输入”功能。
   仅有微信聊天窗口内的语音消息按钮不够。
@@ -57,7 +58,7 @@ Remote Vibe — 同事试用包
 App 不读取识别结果，需要本人确认是否出字。
 菜单栏显示当前版本，可手动“检查更新”并打开“发布说明与下载”。
 检查仅在点击时联网，不会自动下载或安装。暂无正式发布版本时会明确提示。
-已有语音组件时，下载发布页的 App-AppleSilicon.zip，按说明退出、备份并替换原 App；
+已有语音组件时，按芯片下载发布页的 App-AppleSilicon.zip 或 App-Intel.zip，按说明退出、备份并替换原 App；
 无需卸载或重装驱动，也不重启音频服务。首次安装才使用完整安装包。
 界面支持简体中文和英文，跟随系统语言；更改语言后重开 App。
 

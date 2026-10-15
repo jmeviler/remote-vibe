@@ -25,11 +25,13 @@ https://github.com/user-attachments/assets/4cbc3415-3314-42ce-bcce-033f001962ea
 
 ## 开始使用
 
-需要 **Apple Silicon Mac、macOS 15+**。语音输入还需要微信支持“长按 Fn 全局语音输入”。
+需要 **Apple Silicon 或 Intel Mac、macOS 15+**。语音输入还需要微信支持“长按 Fn 全局语音输入”。
 
-1. 从 [Releases](https://github.com/jmeviler/remote-vibe/releases) 下载完整安装包，解压后按其中的说明安装 Remote Vibe 和语音组件。
+1. 从 [Releases](https://github.com/jmeviler/remote-vibe/releases) 按芯片选择完整安装包：M 系列选 `Mac-AppleSilicon.zip`，Intel 选 `Mac-Intel.zip`；解压后按其中的说明安装 Remote Vibe 和语音组件。
 2. 在系统蓝牙设置中配对遥控器，打开 App 选择型号，并按提示开启权限。
 3. 启用微信全局语音输入，点击目标文本框，按住遥控器语音键说话，松开出字。
+
+Intel 版已加入云端构建与隔离测试，真实遥控器和微信语音尚待验证。
 
 窗口顶部显示设备与权限是否就绪；微信识别通过“微信试说说明”自行确认。菜单栏可查看版本、手动检查更新；已安装驱动时，下载 App 更新包即可。
 
@@ -47,12 +49,7 @@ https://github.com/user-attachments/assets/4cbc3415-3314-42ce-bcce-033f001962ea
 
 ## 从源码构建
 
-安装 Xcode Command Line Tools 后，在仓库根目录运行：
-
-```sh
-zsh Scripts/build-app.sh
-open "build/Remote Vibe.app"
-```
+推送 PR 后，GitHub Actions 分别在 Apple Silicon 和 Intel 云端 Mac 编译、测试与打包。下载 `Remote-Vibe-Release` 构建产物即可获得两套安装包、两套 App 更新包和统一校验文件。
 
 普通按键映射不需要驱动；语音组件的构建、安装与打包方法见 [开发说明](Docs/DEVELOPMENT.md)。
 

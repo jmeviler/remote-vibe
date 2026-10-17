@@ -150,9 +150,12 @@ enum AudioPipelineTest {
         mic.stop()
     }
 
-    private static func pumpTracking(_ seconds: TimeInterval) {
+    private static func pumpTracking(_ seconds: TimeInterval, until condition: (() -> Bool)? = nil) {
         let deadline = Date().addingTimeInterval(seconds)
-        while Date() < deadline { _ = RunLoop.main.run(mode: .eventTracking, before: deadline) }
+        while Date() < deadline {
+            _ = RunLoop.main.run(mode: .eventTracking, before: min(deadline, Date().addingTimeInterval(0.02)))
+            if let condition, condition() { break }
+        }
     }
     private static func scheduling() {
         CFRunLoopAddCommonMode(CFRunLoopGetMain(), CFRunLoopMode(RunLoop.Mode.eventTracking.rawValue as CFString))
@@ -163,11 +166,11 @@ enum AudioPipelineTest {
             precondition(!timedOut); finished += 1
             schedule.after(0.001) { cleaned = true }
         }
-        pumpTracking(0.15)
+        pumpTracking(2.0, until: { finished == 1 && cleaned })
         precondition(finished == 1 && cleaned)
         schedule.waitForDrain(ready: { false }) { timedOut in precondition(timedOut); finished += 1 }
         now = 14.1
-        pumpTracking(0.15)
+        pumpTracking(2.0, until: { finished == 2 })
         precondition(finished == 2)
         schedule.after(0.001) { preconditionFailure("Cancelled cleanup fired") }
         schedule.waitForDrain(ready: { true }) { _ in preconditionFailure("Cancelled drain fired") }

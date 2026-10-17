@@ -2,8 +2,11 @@
 set -euo pipefail
 [[ "${3:-/}" == / ]] || { print -u2 '请使用当前启动磁盘。'; exit 1; }
 if /usr/bin/pgrep -x RemoteVibe >/dev/null; then
-  print -u2 '请先从菜单栏退出 Remote Vibe，再运行卸载包。'
-  exit 1
+  /usr/bin/killall RemoteVibe 2>/dev/null || true
+  sleep 0.5
+  if /usr/bin/pgrep -x RemoteVibe >/dev/null; then
+    /usr/bin/killall -9 RemoteVibe 2>/dev/null || true
+  fi
 fi
 targets=('/Applications/Remote Vibe.app' '/Library/Audio/Plug-Ins/HAL/RemoteVibeMic.driver')
 identifiers=(local.ben.RemoteVibe local.ben.RemoteVibeMic)
@@ -19,16 +22,20 @@ done
 (( ${#present} > 0 )) || exit 0
 # A root-owned parent prevents another local account substituting a symlink.
 backup_parent='/Users/Shared/RemoteVibe-Uninstalled'
+console_uid=$(/usr/bin/stat -f '%u' /dev/console 2>/dev/null || echo 0)
 if [[ -e "$backup_parent" || -L "$backup_parent" ]]; then
-  [[ ! -L "$backup_parent" && -d "$backup_parent" && "$(/usr/bin/stat -f '%u' "$backup_parent")" == 0 ]] || exit 1
+  [[ ! -L "$backup_parent" && -d "$backup_parent" ]] || exit 1
+  parent_uid=$(/usr/bin/stat -f '%u' "$backup_parent")
+  if (( parent_uid != 0 && parent_uid != console_uid )); then
+    print -u2 "备份目录所有权异常：$backup_parent"; exit 1
+  fi
 else
   /bin/mkdir -m 755 "$backup_parent"
 fi
 /bin/chmod 755 "$backup_parent"
 backup=$(/usr/bin/mktemp -d "$backup_parent/backup-$(date +%Y%m%d-%H%M%S).XXXXXX")
 for bundle in "${present[@]}"; do /bin/mv "$bundle" "$backup/"; done
-console_uid=$(/usr/bin/stat -f '%u' /dev/console)
-if (( console_uid >= 501 )); then /usr/sbin/chown -R "$console_uid":staff "$backup"; fi
+if (( console_uid >= 501 )); then /usr/sbin/chown -R "$console_uid":staff "$backup" 2>/dev/null || true; fi
 /usr/bin/killall coreaudiod 2>/dev/null || true
 /usr/sbin/pkgutil --forget local.ben.RemoteVibe.share >/dev/null 2>&1 || true
 print "已卸载。App 和语音组件保留在：$backup"

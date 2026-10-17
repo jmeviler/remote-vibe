@@ -19,9 +19,9 @@ App、语音驱动、测试程序和多架构验证的编译、打包统一使�
 
 | 文件 | 使用方式 |
 | --- | --- |
-| `Remote-Vibe-<版本>-Mac-AppleSilicon.zip` | 首次安装，包含 App、驱动、使用说明和源码 |
+| `Remote-Vibe-<版本>-Mac-AppleSilicon.zip` | 首次安装或升级，包含 App、驱动、使用说明和源码（已有组件时自动备份升级） |
 | `Remote-Vibe-<版本>-App-AppleSilicon.zip` | 退出 App、备份并替换原 App，保留现有驱动与配置 |
-| `Remote-Vibe-<版本>-Mac-Intel.zip` | Intel 首次安装，包含对应架构 App、驱动、使用说明和源码 |
+| `Remote-Vibe-<版本>-Mac-Intel.zip` | Intel 首次安装或升级，包含对应架构 App、驱动、使用说明和源码（已有组件时自动备份升级） |
 | `Remote-Vibe-<版本>-App-Intel.zip` | Intel 已有对应驱动时，仅替换 App |
 | `SHA256SUMS.txt` | 包含全部四个 ZIP 校验值；下载全部时执行 `shasum -a 256 -c SHA256SUMS.txt`，单个文件可直接计算 SHA256 并比较 |
 

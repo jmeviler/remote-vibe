@@ -1,17 +1,15 @@
-Remote Vibe 0.4.8 · 简体中文 / English · Apple Silicon / Intel · macOS 15+
+Remote Vibe 0.4.9 · 简体中文 / English · Apple Silicon / Intel · macOS 15+
 
-- 新增 Intel Mac 下载包；Apple Silicon 与 Intel 分别编译、测试和打包，每个包包含对应架构的 App 和语音驱动。
-- 全部构建由 GitHub Actions 的 Apple Silicon / Intel 云端 Mac 完成；两种架构都通过后才汇总发布附件。
-- 安装器检查实际芯片，拒绝不匹配的安装包，包括在 Apple Silicon 上通过 Rosetta 打开 Intel 安装器的情况。
-- 手动检查更新按当前 App 架构匹配下载包；保留 Apple Silicon 原文件名，兼容旧版更新检测。
-- 发布前检查下载校验值、App / 驱动架构与签名、安装器约束、图标资源和对应源码。
+- 优化安装器升级体验：完整安装包（PKG）支持直接覆盖升级，自动退出运行中的旧版并将已有组件备份至 `/Users/Shared/RemoteVibe-Uninstalled/`，无需手动先运行卸载包。
+- 修复蓝牙连接定时器：在菜单保持展开时继续处理连接超时，避免遥控器重连延迟（#14）。
+- 继续提供独立的 Apple Silicon 与 Intel 安装包与更新包，支持 macOS 15+。
 
 **下载选择**
 
-| Mac 芯片 | 首次安装：App + 语音组件 | 已有对应语音组件：仅更新 App |
+| Mac 芯片 | 首次安装或升级：App + 语音组件 | 已有对应语音组件：仅更新 App |
 | --- | --- | --- |
-| Apple Silicon（M1 / M2 / M3 / M4 等 M 系列） | `Remote-Vibe-0.4.8-Mac-AppleSilicon.zip` | `Remote-Vibe-0.4.8-App-AppleSilicon.zip` |
-| Intel | `Remote-Vibe-0.4.8-Mac-Intel.zip` | `Remote-Vibe-0.4.8-App-Intel.zip` |
+| Apple Silicon（M1 / M2 / M3 / M4 等 M 系列） | `Remote-Vibe-0.4.9-Mac-AppleSilicon.zip` | `Remote-Vibe-0.4.9-App-AppleSilicon.zip` |
+| Intel | `Remote-Vibe-0.4.9-Mac-Intel.zip` | `Remote-Vibe-0.4.9-App-Intel.zip` |
 
 在“关于本机”查看芯片。两种架构均要求 macOS 15 或更新。更新前退出 App、备份旧 App，再替换原位置；App 更新包不会重启音频服务。完整包附对应源码、使用说明和卸载包。
 
@@ -21,10 +19,10 @@ Remote Vibe 0.4.8 · 简体中文 / English · Apple Silicon / Intel · macOS 15
 
 ---
 
-This release adds separate Intel Mac downloads alongside Apple Silicon. Each archive contains the matching native App and audio driver. GitHub Actions builds and tests each architecture on its own macOS runner; release assets are assembled only after both pass.
+Remote Vibe 0.4.9 · Simplified Chinese / English · Apple Silicon / Intel · macOS 15+
 
-The installer rejects the wrong physical CPU, including an Intel installer opened through Rosetta on Apple silicon. Manual update checks match the current App architecture, while existing AppleSilicon asset names remain compatible with older clients.
+- Seamless installer upgrades: the full PKG installer now supports direct in-place upgrades by automatically closing running instances and safely backing up existing components to `/Users/Shared/RemoteVibe-Uninstalled/`, eliminating manual uninstall steps.
+- Bluetooth timers: keep connection deadlines running while menus are open, avoiding reconnect delays (#14).
+- Continues providing separate Apple Silicon and Intel native archives for macOS 15+.
 
-Choose **Mac-AppleSilicon.zip** or **Mac-Intel.zip** for first setup, and the matching **App-AppleSilicon.zip** or **App-Intel.zip** for an App-only update after quitting and backing up the old App. Both require macOS 15+. The combined **SHA256SUMS.txt** covers all four archives.
-
-Native cloud builds, isolated tests and package checks passed for both architectures. Intel Bluetooth remotes, system driver loading and WeChat transcription still require physical-device validation; Intel is offered as a new trial package. Audio processing is unchanged. The App and driver are ad hoc signed, not Apple-notarized. Voice recognition requires WeChat global hold-Fn input.
+Choose **Mac-AppleSilicon.zip** or **Mac-Intel.zip** for first setup or complete upgrades, and the matching **App-AppleSilicon.zip** or **App-Intel.zip** for an App-only update. Both require macOS 15+. The combined **SHA256SUMS.txt** covers all four archives.

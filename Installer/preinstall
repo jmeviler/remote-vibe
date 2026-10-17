@@ -12,17 +12,46 @@ fi
 [[ "$machine_arch" == "$package_arch" ]] || fail '本安装包不适用于这台 Mac 的芯片，请下载对应的 Apple Silicon 或 Intel 安装包。'
 os_version=$(/usr/bin/sw_vers -productVersion)
 (( ${os_version%%.*} >= 15 )) || fail '需要 macOS 15 或更新版本。'
+# 如果旧版 App 正在运行，先平滑退出，避免安装覆盖时文件冲突
 if /usr/bin/pgrep -x RemoteVibe >/dev/null; then
-  fail '请先从菜单栏退出正在运行的 Remote Vibe，再重新安装。'
+  /usr/bin/killall RemoteVibe 2>/dev/null || true
+  sleep 0.5
+  if /usr/bin/pgrep -x RemoteVibe >/dev/null; then
+    /usr/bin/killall -9 RemoteVibe 2>/dev/null || true
+  fi
 fi
-check_target() {
-  local bundle="$1" expected="$2"
-  [[ ! -e "$bundle" && ! -L "$bundle" ]] && return 0
+
+# 检查目标路径；若存在旧版组件则安全备份，支持无缝覆盖升级
+targets=('/Applications/Remote Vibe.app' '/Library/Audio/Plug-Ins/HAL/RemoteVibeMic.driver')
+identifiers=(local.ben.RemoteVibe local.ben.RemoteVibeMic)
+present=()
+for index in 1 2; do
+  bundle="${targets[$index]}"
+  [[ ! -e "$bundle" && ! -L "$bundle" ]] && continue
   [[ ! -L "$bundle" && -d "$bundle" ]] || fail "目标路径异常，未覆盖：$bundle"
-  local identifier=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$bundle/Contents/Info.plist" 2>/dev/null) || fail "无法识别已有组件，未覆盖：$bundle"
-  [[ "$identifier" == "$expected" ]] || fail "已有同名其他应用，未覆盖：$bundle"
-  # Updates are explicit: first use the included uninstaller, which keeps a backup.
-  fail "发现已有组件：$bundle。请先运行配套卸载包（会保留备份），再安装。"
-}
-check_target '/Applications/Remote Vibe.app' local.ben.RemoteVibe
-check_target '/Library/Audio/Plug-Ins/HAL/RemoteVibeMic.driver' local.ben.RemoteVibeMic
+  identifier=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$bundle/Contents/Info.plist" 2>/dev/null) || fail "无法识别已有组件，未覆盖：$bundle"
+  [[ "$identifier" == "${identifiers[$index]}" ]] || fail "已有同名其他应用，未覆盖：$bundle"
+  present+=("$bundle")
+done
+
+if (( ${#present} > 0 )); then
+  backup_parent='/Users/Shared/RemoteVibe-Uninstalled'
+  console_uid=$(/usr/bin/stat -f '%u' /dev/console 2>/dev/null || echo 0)
+  if [[ -e "$backup_parent" || -L "$backup_parent" ]]; then
+    [[ ! -L "$backup_parent" && -d "$backup_parent" ]] || fail "备份目录异常：$backup_parent"
+    parent_uid=$(/usr/bin/stat -f '%u' "$backup_parent")
+    if (( parent_uid != 0 && parent_uid != console_uid )); then
+      fail "备份目录所有权异常：$backup_parent"
+    fi
+  else
+    /bin/mkdir -m 755 "$backup_parent"
+  fi
+  /bin/chmod 755 "$backup_parent"
+  backup=$(/usr/bin/mktemp -d "$backup_parent/backup-$(date +%Y%m%d-%H%M%S).XXXXXX")
+  for bundle in "${present[@]}"; do
+    /bin/mv "$bundle" "$backup/"
+  done
+  if (( console_uid >= 501 )); then
+    /usr/sbin/chown -R "$console_uid":staff "$backup" 2>/dev/null || true
+  fi
+fi

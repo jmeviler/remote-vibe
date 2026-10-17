@@ -7,10 +7,11 @@ Intel physical-remote and WeChat voice validation is still pending.
 Voice recognition requires WeChat’s global hold-Fn voice input; a chat voice-message button is not enough.
 Remote Vibe does not provide its own speech recognition service.
 
-FIRST INSTALL
+FIRST INSTALL AND UPGRADES
 1. Open “1-安装 Remote Vibe.pkg” in this archive and follow the installer.
    Installation needs administrator access and briefly restarts system audio.
-   If components already exist, use the App-only update archive instead.
+   If components already exist, the installer automatically backs them up before upgrading,
+   or you can use the matching App-only update archive to update just the app.
 2. This build is ad hoc signed, not Apple-notarized. If blocked, review the download in
    System Settings > Privacy & Security and allow opening. Do not disable system protection.
 3. Pair the remote in System Settings > Bluetooth. Disconnect it from its TV first.

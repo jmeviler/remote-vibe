@@ -45,7 +45,7 @@ for item in items:
     item['BundleIsRelocatable'] = False
     item['BundleHasStrictIdentifier'] = True
 p.write_bytes(plistlib.dumps(items))
-for name, text in [('welcome', 'Remote Vibe '+version+'\n\n适用于 '+chip+' Mac，macOS 15 或更新。\n支持 Google Chromecast 和小米 RC003 遥控器。\n\n包含 App 和语音组件，无需编译。\n识别依赖微信已有的“长按 Fn 全局语音输入”。\n首次使用仍需本人允许蓝牙、辅助功能等系统权限。\n\n安装会重启系统音频服务，声音可能短暂中断。\n已有旧版时，请先退出 App 并使用配套卸载包。'), ('conclusion', '安装完成\n\n请打开“应用程序 → Remote Vibe”，选择遥控器型号。\n按 App 提示允许权限，然后启用微信长按 Fn 语音输入。\n\n首次使用的完整步骤、常见问题和卸载方法，见压缩包内“0-开始使用.txt”。')]:
+for name, text in [('welcome', 'Remote Vibe '+version+'\n\n适用于 '+chip+' Mac，macOS 15 或更新。\n支持 Google Chromecast 和小米 RC003 遥控器。\n\n包含 App 和语音组件，无需编译。\n识别依赖微信已有的“长按 Fn 全局语音输入”。\n首次使用仍需本人允许蓝牙、辅助功能等系统权限。\n\n安装会重启系统音频服务，声音可能短暂中断。\n已有旧版时会自动备份并升级。'), ('conclusion', '安装完成\n\n请打开“应用程序 → Remote Vibe”，选择遥控器型号。\n按 App 提示允许权限，然后启用微信长按 Fn 语音输入。\n\n首次使用的完整步骤、常见问题和卸载方法，见压缩包内“0-开始使用.txt”。')]:
     (root/'resources'/f'{name}.html').write_text('<html><head><meta charset="utf-8"></head><body style="font-family: -apple-system; font-size:14px"><pre style="font-family:inherit;white-space:pre-wrap">'+html.escape(text)+'</pre></body></html>')
 distribution = f'''<?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">

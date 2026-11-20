@@ -8,10 +8,10 @@ final class VoiceStudioView: SettingsPage {
     private let meterCard = SettingsPanel()
     private let meterStatusLabel = NSTextField(labelWithString: "")
     private let meterView = VoiceLevelMeterView()
-    private let presetPopup = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let presetPopup = StyledPopUpButton(frame: .zero, pullsDown: false)
     private let presetHintPanel = SettingsPanel()
     private let presetHintLabel = NSTextField(wrappingLabelWithString: "")
-    private let customModeControl = NSSegmentedControl()
+    private let customModeControl = StyledSegmentedControl()
     private let customRecorder = ShortcutRecorderControl()
     private let switchMicCheckbox = NSButton(checkboxWithTitle: L("说话时自动切到遥控器麦克风（推荐）"), target: nil, action: nil)
     private let switchMicDetail = NSTextField(wrappingLabelWithString: L("戴蓝牙耳机开会不想声音闪断时，可在微信里固定选 Chromecast Mic 后关闭此项。"))
@@ -26,7 +26,7 @@ final class VoiceStudioView: SettingsPage {
 
     init(settings: VoiceInputSettings) {
         self.settings = settings
-        super.init(frame: NSRect(x: 0, y: 0, width: 558, height: 414))
+        super.init(frame: NSRect(x: 0, y: 0, width: 558, height: 426))
 
         meterCard.fill = SettingsTheme.subtleFill
         meterCard.border = SettingsTheme.line
@@ -36,14 +36,14 @@ final class VoiceStudioView: SettingsPage {
 
         meterStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
         meterStatusLabel.textColor = SettingsTheme.ink
-        meterStatusLabel.frame = NSRect(x: 16, y: 12, width: 526, height: 18)
+        meterStatusLabel.frame = NSRect(x: 16, y: 14, width: 526, height: 18)
         addSubview(meterStatusLabel)
 
-        meterView.frame = NSRect(x: 16, y: 40, width: 526, height: 26)
+        meterView.frame = NSRect(x: 16, y: 42, width: 526, height: 24)
         addSubview(meterView)
 
         let triggerHeader = SettingsTheme.eyebrow(L("01 / 语音输入方式"))
-        triggerHeader.frame = NSRect(x: 0, y: 96, width: 558, height: 16)
+        triggerHeader.frame = NSRect(x: 0, y: 98, width: 558, height: 15)
         addSubview(triggerHeader)
 
         presetPopup.addItems(withTitles: [
@@ -57,35 +57,32 @@ final class VoiceStudioView: SettingsPage {
         presetPopup.target = self
         presetPopup.action = #selector(presetChanged)
         presetPopup.setAccessibilityLabel(L("语音输入触发方式"))
-        presetPopup.frame = NSRect(x: 0, y: 118, width: 558, height: 34)
+        presetPopup.frame = NSRect(x: 0, y: 120, width: 558, height: 38)
         addSubview(presetPopup)
 
         presetHintPanel.fill = SettingsTheme.subtleFill
         presetHintPanel.border = nil
         presetHintPanel.radius = 11
-        presetHintPanel.frame = NSRect(x: 0, y: 160, width: 558, height: 64)
+        presetHintPanel.frame = NSRect(x: 0, y: 168, width: 558, height: 62)
         addSubview(presetHintPanel)
 
         presetHintLabel.font = .systemFont(ofSize: 11)
         presetHintLabel.textColor = SettingsTheme.secondary
-        presetHintLabel.frame = NSRect(x: 14, y: 171, width: 530, height: 42)
+        presetHintLabel.frame = NSRect(x: 15, y: 179, width: 528, height: 40)
         addSubview(presetHintLabel)
 
         customModeControl.segmentCount = VoiceTriggerMode.allCases.count
-        customModeControl.segmentStyle = .separated
-        customModeControl.selectedSegmentBezelColor = SettingsTheme.forest
-        customModeControl.segmentDistribution = .fillEqually
         customModeControl.font = .systemFont(ofSize: 12, weight: .medium)
         for (index, mode) in VoiceTriggerMode.allCases.enumerated() {
             customModeControl.setLabel(mode.title, forSegment: index)
         }
         customModeControl.target = self
         customModeControl.action = #selector(customModeChanged)
-        customModeControl.frame = NSRect(x: 0, y: 160, width: 558, height: 30)
+        customModeControl.frame = NSRect(x: 0, y: 166, width: 558, height: 34)
         addSubview(customModeControl)
 
         customRecorder.allowFnOnly = false
-        customRecorder.frame = NSRect(x: 0, y: 198, width: 558, height: 38)
+        customRecorder.frame = NSRect(x: 0, y: 208, width: 558, height: 36)
         customRecorder.onShortcutRecorded = { [weak self] usage, modifiers in
             guard let self else { return }
             self.customUsage = usage
@@ -95,34 +92,34 @@ final class VoiceStudioView: SettingsPage {
         addSubview(customRecorder)
 
         let optionsHeader = SettingsTheme.eyebrow(L("02 / 通话与连说体验"))
-        optionsHeader.frame = NSRect(x: 0, y: 250, width: 558, height: 16)
+        optionsHeader.frame = NSRect(x: 0, y: 256, width: 558, height: 15)
         addSubview(optionsHeader)
 
         switchMicCheckbox.font = .systemFont(ofSize: 13, weight: .medium)
         switchMicCheckbox.target = self
         switchMicCheckbox.action = #selector(switchMicChanged)
-        switchMicCheckbox.frame = NSRect(x: 0, y: 272, width: 558, height: 22)
+        switchMicCheckbox.frame = NSRect(x: 0, y: 278, width: 558, height: 22)
         addSubview(switchMicCheckbox)
 
         switchMicDetail.font = .systemFont(ofSize: 11)
         switchMicDetail.textColor = SettingsTheme.secondary
-        switchMicDetail.frame = NSRect(x: 22, y: 295, width: 536, height: 28)
+        switchMicDetail.frame = NSRect(x: 22, y: 301, width: 536, height: 26)
         addSubview(switchMicDetail)
 
         fastCheckbox.font = .systemFont(ofSize: 13, weight: .medium)
         fastCheckbox.target = self
         fastCheckbox.action = #selector(fastChanged)
-        fastCheckbox.frame = NSRect(x: 0, y: 325, width: 558, height: 22)
+        fastCheckbox.frame = NSRect(x: 0, y: 331, width: 558, height: 22)
         addSubview(fastCheckbox)
 
         fastDetail.font = .systemFont(ofSize: 11)
         fastDetail.textColor = SettingsTheme.secondary
-        fastDetail.frame = NSRect(x: 22, y: 348, width: 536, height: 26)
+        fastDetail.frame = NSRect(x: 22, y: 354, width: 536, height: 24)
         addSubview(fastDetail)
 
         guideButton.target = self
         guideButton.action = #selector(showGuidePressed)
-        guideButton.frame = NSRect(x: 0, y: 378, width: 196, height: 34)
+        guideButton.frame = NSRect(x: 0, y: 386, width: 196, height: 36)
         addSubview(guideButton)
 
         captureHorizontalLayout()

@@ -19,8 +19,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private var mappingView: KeyMappingView!
     private var unlockView: ComboUnlockView!
     private var shellView: SettingsView!
-    private var pages: NSSegmentedControl!
-    private var remotePicker: NSPopUpButton!
+    private var pages: StyledSegmentedControl!
+    private var remotePicker: StyledPopUpButton!
     private var discoveryButton: StyledButton!
     private var item: NSStatusItem!
     private var window: NSWindow!
@@ -387,7 +387,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             readiness.stringValue = inputMonitoring ? L("设备与权限已就绪 · 按住遥控器语音键即可说话") :
                 L("语音设备已就绪 · 自定义按键需输入监控")
         }
-        shellView?.readinessPill.isReady = missing.isEmpty
+        shellView?.readinessDot.isReady = missing.isEmpty
         readiness.textColor = missing.isEmpty ? SettingsTheme.ink : SettingsTheme.error
         readiness.toolTip = readiness.stringValue
     }
@@ -469,17 +469,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.delegate = self
         window.title = L("Remote Vibe %@ · 遥控器设置", version)
+        window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.backgroundColor = SettingsTheme.canvas
         window.contentMinSize = NSSize(width: 900, height: 640)
         window.isReleasedWhenClosed = false
         window.center()
-        remotePicker = NSPopUpButton()
+        remotePicker = StyledPopUpButton(frame: .zero, pullsDown: false)
         remotePicker.addItems(withTitles: RemoteProfile.allCases.map { $0.title })
         remotePicker.selectItem(at: RemoteProfile.allCases.firstIndex(of: remote.profile) ?? 0)
         remotePicker.target = self; remotePicker.action = #selector(changeRemote)
         discoveryButton = SettingsTheme.button(L("扫描遥控器"), target: self, action: #selector(toggleDiscovery))
-        pages = NSSegmentedControl(labels: [L("按键映射"), L("连招解锁")], trackingMode: .selectOne, target: self, action: #selector(changePage))
+        pages = StyledSegmentedControl(labels: [L("按键映射"), L("连招解锁")], trackingMode: .selectOne, target: self, action: #selector(changePage))
         pages.selectedSegment = 0
         mappingView = KeyMappingView(mapping: mapping, voiceSettings: voiceSettings)
         mappingView.onVoiceSettingsChange = { [weak self] in
@@ -688,15 +689,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         show()
         mappingView.selectRemoteButton(code: 0)
         guard window.attachedSheet == nil else { return }
-        let accessory = FlippedAccessoryView(frame: NSRect(x: 0, y: 0, width: 396, height: 84))
-        let modeControl = NSSegmentedControl(labels: VoiceTriggerMode.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil)
-        modeControl.frame = NSRect(x: 0, y: 4, width: 396, height: 30)
-        modeControl.segmentDistribution = .fillEqually
+        let accessory = FlippedAccessoryView(frame: NSRect(x: 0, y: 0, width: 396, height: 88))
+        let modeControl = StyledSegmentedControl(labels: VoiceTriggerMode.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil)
+        modeControl.frame = NSRect(x: 0, y: 4, width: 396, height: 34)
         accessory.addSubview(modeControl)
 
         let recorder = ShortcutRecorderControl()
         recorder.allowFnOnly = false
-        recorder.frame = NSRect(x: 0, y: 44, width: 396, height: 36)
+        recorder.frame = NSRect(x: 0, y: 46, width: 396, height: 36)
         accessory.addSubview(recorder)
 
         if case let .custom(mode, usage, modifiers) = voiceSettings.trigger {

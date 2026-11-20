@@ -247,7 +247,7 @@ enum ButtonGestureUITest {
         precondition(recorder.usage == 0x52)
         let expectedFlags = CGEventFlags([.maskCommand, .maskShift]).rawValue
         precondition(recorder.modifiers == expectedFlags, "Arrow implicit .function must not add SecondaryFn")
-        precondition(trigger.label(forSegment: 2)?.contains("•") == true)
+        precondition((trigger as? StyledSegmentedControl)?.configuredSegments.contains(2) == true)
         precondition(view.hasUnsavedChanges)
 
         let search = all.compactMap { $0 as? NSSearchField }.first!
@@ -262,7 +262,7 @@ enum ButtonGestureUITest {
 
         view.discardDrafts()
         precondition(!view.hasUnsavedChanges && !save.isEnabled)
-        precondition(trigger.label(forSegment: 2)?.contains("•") == false)
+        precondition((trigger as? StyledSegmentedControl)?.configuredSegments.contains(2) == false)
 
         // Verify dark appearance offscreen rendering does not crash or fail layout.
         view.appearance = NSAppearance(named: .darkAqua)

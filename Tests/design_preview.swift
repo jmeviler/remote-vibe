@@ -36,7 +36,10 @@ enum DesignPreview {
         let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
         view.cacheDisplay(in: view.bounds, to: bitmap)
         let image = NSImage(size: view.bounds.size)
-        image.lockFocus(); SettingsTheme.canvas.setFill(); view.bounds.fill()
+        let isDark = view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        image.lockFocus()
+        SettingsTheme.color(isDark ? 0x131815 : 0xF2F3EE).setFill()
+        view.bounds.fill()
         NSImage(cgImage: bitmap.cgImage!, size: view.bounds.size).draw(in: view.bounds)
         image.unlockFocus()
         let rendered = NSBitmapImageRep(data: image.tiffRepresentation!)!
@@ -55,20 +58,24 @@ enum DesignPreview {
             let view = KeyMappingView(mapping: mapping)
             let combo = ComboUnlockView(controller: ComboUnlock(), allowPermissions: {})
             combo.isHidden = true
-            let remote = NSPopUpButton()
+            let remote = StyledPopUpButton(frame: .zero, pullsDown: false)
             remote.addItems(withTitles: RemoteProfile.allCases.map(\.title))
             remote.selectItem(at: profile == .chromecast ? 0 : 1)
-            let tabs = NSSegmentedControl(labels: [L("按键映射"), L("连招解锁")], trackingMode: .selectOne, target: nil, action: nil)
+            let tabs = StyledSegmentedControl(labels: [L("按键映射"), L("连招解锁")], trackingMode: .selectOne, target: nil, action: nil)
             tabs.selectedSegment = 0; tabs.isHidden = profile == .xiaomiRC003
+            let discoveryBtn = SettingsTheme.secondaryButton(L("已连接"))
+            discoveryBtn.isEnabled = false
+            let permsBtn = SettingsTheme.secondaryButton(L("权限设置"))
             let shell = SettingsView(mapping: view, unlock: combo, remote: remote,
-                discovery: SettingsTheme.button(L("扫描遥控器")), pages: tabs,
-                connection: NSTextField(wrappingLabelWithString: L("等待遥控器连接")),
+                discovery: discoveryBtn, pages: tabs,
+                connection: NSTextField(wrappingLabelWithString: L("%@：遥控器已连接", "Google")),
                 audio: NSTextField(wrappingLabelWithString: L("语音组件：已就绪")),
-                permission: NSTextField(wrappingLabelWithString: L("辅助功能：%@\n输入监控：%@", L("已允许"), L("已允许"))),
-                permissionsButton: SettingsTheme.button(L("权限设置")),
+                permission: NSTextField(wrappingLabelWithString: L("辅助功能：%@ · 输入监控：%@", L("已允许"), L("已允许"))),
+                permissionsButton: permsBtn,
                 message: NSTextField(wrappingLabelWithString: L("准备就绪后，在当前输入框里按住语音键说话。")),
-                readiness: NSTextField(labelWithString: L("语音待就绪 · ") + L("连接遥控器")),
-                wechatButton: SettingsTheme.button(L("微信试说说明")))
+                readiness: NSTextField(labelWithString: L("设备与权限已就绪 · 按住遥控器语音键即可说话")),
+                wechatButton: SettingsTheme.secondaryButton(L("微信试说说明")))
+            shell.appearance = NSAppearance(named: .aqua)
             let window = NSWindow(contentRect: shell.bounds, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             let scroll = SettingsScrollView(frame: shell.bounds)
             scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true; scroll.scrollerStyle = .overlay
@@ -82,6 +89,9 @@ enum DesignPreview {
             }
             resize(1080)
             try capture(shell, name: profile.rawValue + "-default", directory: directory)
+            shell.appearance = NSAppearance(named: .darkAqua)
+            try capture(shell, name: profile.rawValue + "-default-dark", directory: directory)
+            shell.appearance = NSAppearance(named: .aqua)
             resize(1280)
             try capture(shell, name: profile.rawValue + "-wide", directory: directory)
             resize(1080)

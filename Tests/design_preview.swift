@@ -70,11 +70,11 @@ enum DesignPreview {
                 discovery: discoveryBtn, pages: tabs,
                 connection: NSTextField(wrappingLabelWithString: L("%@：遥控器已连接", "Google")),
                 audio: NSTextField(wrappingLabelWithString: L("语音组件：已就绪")),
-                permission: NSTextField(wrappingLabelWithString: L("辅助功能：%@ · 输入监控：%@", L("已允许"), L("已允许"))),
+                permission: NSTextField(wrappingLabelWithString: L("系统权限：已全部开启")),
                 permissionsButton: permsBtn,
-                message: NSTextField(wrappingLabelWithString: L("准备就绪后，在当前输入框里按住语音键说话。")),
-                readiness: NSTextField(labelWithString: L("设备与权限已就绪 · 按住遥控器语音键即可说话")),
-                wechatButton: SettingsTheme.secondaryButton(L("微信试说说明")))
+                message: NSTextField(wrappingLabelWithString: L("在左侧点选按键，或直接按手里的遥控器即可修改配置。")),
+                readiness: NSTextField(labelWithString: L("已就绪 · 在任意输入框按住遥控器语音键即可说话")),
+                wechatButton: SettingsTheme.secondaryButton(L("微信语音指南")))
             shell.appearance = NSAppearance(named: .aqua)
             let window = NSWindow(contentRect: shell.bounds, styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             let scroll = SettingsScrollView(frame: shell.bounds)

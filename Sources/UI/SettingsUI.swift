@@ -353,9 +353,7 @@ enum SettingsTheme {
     }
 
     static func eyebrow(_ text: String, light: Bool = false) -> NSTextField {
-        let view = label(text, size: 10, weight: .medium, color: light ? color(0xABBCA9) : secondary)
-        view.font = .monospacedSystemFont(ofSize: 10, weight: .medium)
-        return view
+        label(text, size: 11, weight: .semibold, color: light ? color(0xABBCA9) : secondary)
     }
 
     static func style(_ field: NSTextField) {
@@ -553,7 +551,7 @@ final class SettingsView: SettingsPage {
         func place(_ view: NSView, _ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) {
             view.frame = NSRect(x: x, y: y, width: width, height: height); addSubview(view)
         }
-        place(SettingsTheme.eyebrow("REMOTE VIBE  /  DESKTOP CONTROL"), 30, 24, 380, 15)
+        place(SettingsTheme.eyebrow(L("Remote Vibe · 遥控语音与快捷键")), 30, 23, 380, 16)
         place(SettingsTheme.label(L("把习惯，放进按键。"), size: 28, weight: .semibold, color: SettingsTheme.ink), 28, 46, 460, 40)
         place(readinessDot, 30, 96, 10, 10)
         readiness.font = .systemFont(ofSize: 12, weight: .medium)

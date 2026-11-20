@@ -29,11 +29,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private let permission = NSTextField(wrappingLabelWithString: "")
     private let readiness = NSTextField(labelWithString: L("正在检查使用条件…"))
     private let permissionsButton = SettingsTheme.button(L("权限设置"))
-    private let message = NSTextField(wrappingLabelWithString: L("准备就绪后，在当前输入框里按住语音键说话。"))
+    private let message = NSTextField(wrappingLabelWithString: L("在左侧点选按键，或直接按手里的遥控器即可修改配置。"))
     private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? L("开发版")
     private let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
     private let updateStatus = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let launchAtLoginItem = NSMenuItem(title: L("登录时自动打开"), action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+    private var stopVoiceItem: NSMenuItem!
+    private var exitMouseModeItem: NSMenuItem!
     private var voicePresetItems: [(VoiceTrigger, NSMenuItem)] = []
     private var customVoiceTriggerItem: NSMenuItem!
     private var switchDefaultMicItem: NSMenuItem!
@@ -362,7 +364,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             mic.driverNeedsUpdate ? L("语音组件：需运行完整安装包更新") :
             voiceSettings.switchDefaultInput ? L("语音组件：已就绪") : L("语音组件：已就绪（免切默认麦）")
         audioLabel.toolTip = audioLabel.stringValue
-        permission.stringValue = L("辅助功能：%@ · 输入监控：%@", accessibility ? L("已允许") : L("未允许"), inputMonitoring ? L("已允许") : L("未允许"))
+        if accessibility && inputMonitoring {
+            permission.stringValue = L("系统权限：已全部开启")
+        } else if !accessibility && !inputMonitoring {
+            permission.stringValue = L("待开启权限：辅助功能、输入监控")
+        } else if !accessibility {
+            permission.stringValue = L("待开启权限：辅助功能")
+        } else {
+            permission.stringValue = L("待开启权限：输入监控")
+        }
         permission.toolTip = permission.stringValue
         permissionsButton.title = !accessibility ? L("允许辅助功能") : !inputMonitoring ? L("允许输入监控") : L("权限设置")
         permissionsButton.role = (!accessibility || !inputMonitoring) ? .primary : .secondary
@@ -373,19 +383,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         if voiceSettings.trigger.requiresAccessibility && !accessibility { missing.append(L("允许辅助功能")) }
         if remote.xiaomiReady && !xiaomiVoiceKey.ready { missing.append(L("重新连接小米语音键")) }
         if !missing.isEmpty {
-            readiness.stringValue = L("语音待就绪 · ") + missing.joined(separator: " · ")
+            readiness.stringValue = L("待完成设置：%@", missing.joined(separator: "、"))
         } else if unlock.blocksActions {
-            readiness.stringValue = L("语音暂停 · 锁屏或连招录入中")
+            readiness.stringValue = L("语音已暂停 · 当前处于锁屏或连招录制中")
         } else if active || remote.voiceBusy {
-            readiness.stringValue = L("语音处理中 · 请等待本次结束")
+            readiness.stringValue = L("正在处理语音 · 请等待本句结束")
         } else if mapping.fnHeld {
-            readiness.stringValue = L("语音等待 · 请先松开 Fn 按键")
+            readiness.stringValue = L("请先松开 Fn 按键后再开始语音")
         } else if voiceSettings.trigger != .holdFn || !voiceSettings.switchDefaultInput {
-            readiness.stringValue = L("设备已就绪 · %@ · %@", voiceSettings.trigger.summaryTitle,
+            readiness.stringValue = L("已就绪 · %@ · %@", voiceSettings.trigger.summaryTitle,
                                       voiceSettings.switchDefaultInput ? L("临时切换默认输入") : L("固定输入源 Chromecast Mic"))
         } else {
-            readiness.stringValue = inputMonitoring ? L("设备与权限已就绪 · 按住遥控器语音键即可说话") :
-                L("语音设备已就绪 · 自定义按键需输入监控")
+            readiness.stringValue = inputMonitoring ? L("已就绪 · 在任意输入框按住遥控器语音键即可说话") :
+                L("语音已就绪 · 自定义按键需开启输入监控")
         }
         shellView?.readinessDot.isReady = missing.isEmpty
         readiness.textColor = missing.isEmpty ? SettingsTheme.ink : SettingsTheme.error
@@ -420,9 +430,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         updateStatusItem()
         let menu = NSMenu()
         menu.addItem(withTitle: "Remote Vibe \(version) (\(build))", action: nil, keyEquivalent: "")
-        menu.addItem(withTitle: L("打开遥控语音"), action: #selector(show), keyEquivalent: "")
-        menu.addItem(withTitle: L("立即结束本次语音"), action: #selector(stopVoice), keyEquivalent: "")
-        menu.addItem(withTitle: L("退出鼠标模式"), action: #selector(exitMouseMode), keyEquivalent: "")
+        menu.addItem(withTitle: L("遥控器设置…"), action: #selector(show), keyEquivalent: ",")
+        stopVoiceItem = menu.addItem(withTitle: L("立即结束本次语音"), action: #selector(stopVoice), keyEquivalent: "")
+        exitMouseModeItem = menu.addItem(withTitle: L("退出鼠标模式"), action: #selector(exitMouseMode), keyEquivalent: "")
+        stopVoiceItem.isHidden = true
+        exitMouseModeItem.isHidden = true
         let configurations = NSMenu(title: L("键位配置"))
         for (title, action) in [(L("导入键位到草稿…"), #selector(importMappings)),
                                 (L("导出已保存键位…"), #selector(exportMappings)),
@@ -490,11 +502,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             self.refreshReadiness()
             self.writeStatus()
         }
-        mappingView.onShowVoiceGuide = { [weak self] in self?.showVoiceHelp() }
         unlockView = ComboUnlockView(controller: unlock, allowPermissions: { [weak self] in self?.mappingView.allowListener() })
         unlockView.isHidden = true
         permissionsButton.target = self; permissionsButton.action = #selector(allowFn)
-        let wechatButton = SettingsTheme.secondaryButton(L("微信试说说明"), target: self, action: #selector(showVoiceHelp))
+        let wechatButton = SettingsTheme.secondaryButton(L("微信语音指南"), target: self, action: #selector(showVoiceHelp))
         let shell = SettingsView(mapping: mappingView, unlock: unlockView, remote: remotePicker, discovery: discoveryButton,
             pages: pages, connection: connection, audio: audioLabel, permission: permission,
             permissionsButton: permissionsButton, message: message, readiness: readiness, wechatButton: wechatButton)
@@ -624,7 +635,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             syncLaunchAtLoginItem()
             return true
         }
-        if menuItem.action == #selector(exitMouseMode) { return mapping.mouseModeActive }
+        if menuItem.action == #selector(stopVoice) {
+            let canStop = active || remote.voiceBusy
+            menuItem.isHidden = !canStop
+            return canStop
+        }
+        if menuItem.action == #selector(exitMouseMode) {
+            menuItem.isHidden = !mapping.mouseModeActive
+            return mapping.mouseModeActive
+        }
         return menuItem.action != #selector(checkForUpdates) || updateCheck == nil
     }
 

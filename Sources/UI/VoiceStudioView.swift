@@ -3,7 +3,6 @@ import AppKit
 final class VoiceStudioView: SettingsPage {
     private let settings: VoiceInputSettings
     var onSettingsChange: (() -> Void)?
-    var onShowGuide: (() -> Void)?
 
     private let meterCard = SettingsPanel()
     private let meterStatusLabel = NSTextField(labelWithString: "")
@@ -13,11 +12,10 @@ final class VoiceStudioView: SettingsPage {
     private let presetHintLabel = NSTextField(wrappingLabelWithString: "")
     private let customModeControl = StyledSegmentedControl()
     private let customRecorder = ShortcutRecorderControl()
-    private let switchMicCheckbox = NSButton(checkboxWithTitle: L("说话时自动切到遥控器麦克风（推荐）"), target: nil, action: nil)
-    private let switchMicDetail = NSTextField(wrappingLabelWithString: L("戴蓝牙耳机开会不想声音闪断时，可在微信里固定选 Chromecast Mic 后关闭此项。"))
-    private let fastCheckbox = NSButton(checkboxWithTitle: L("快速连续说话（缩短松手后的等待时间）"), target: nil, action: nil)
-    private let fastDetail = NSTextField(wrappingLabelWithString: L("适合一句接一句连续说话；如果开头偶发漏掉第一个字可关闭。"))
-    private let guideButton = SettingsTheme.secondaryButton(L("查看微信语音设置步骤"))
+    private let switchMicCheckbox = NSButton(checkboxWithTitle: L("说话时自动切换系统麦克风（推荐）"), target: nil, action: nil)
+    private let switchMicDetail = NSTextField(wrappingLabelWithString: L("蓝牙耳机通话中若不想切换音源，可在微信中将麦克风固定为 Chromecast Mic 后关闭。"))
+    private let fastCheckbox = NSButton(checkboxWithTitle: L("快速连说模式"), target: nil, action: nil)
+    private let fastDetail = NSTextField(wrappingLabelWithString: L("缩短每句话前后的缓冲等待，连续说话更跟手；若偶发漏掉首字可关闭。"))
 
     private var customMode: VoiceTriggerMode = .hold
     private var customUsage: UInt64 = 0x2C
@@ -26,49 +24,49 @@ final class VoiceStudioView: SettingsPage {
 
     init(settings: VoiceInputSettings) {
         self.settings = settings
-        super.init(frame: NSRect(x: 0, y: 0, width: 558, height: 426))
+        super.init(frame: NSRect(x: 0, y: 0, width: 558, height: 420))
 
         meterCard.fill = SettingsTheme.subtleFill
         meterCard.border = SettingsTheme.line
         meterCard.radius = 14
-        meterCard.frame = NSRect(x: 0, y: 0, width: 558, height: 82)
+        meterCard.frame = NSRect(x: 0, y: 0, width: 558, height: 86)
         addSubview(meterCard)
 
         meterStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
         meterStatusLabel.textColor = SettingsTheme.ink
-        meterStatusLabel.frame = NSRect(x: 16, y: 14, width: 526, height: 18)
+        meterStatusLabel.frame = NSRect(x: 16, y: 15, width: 526, height: 18)
         addSubview(meterStatusLabel)
 
-        meterView.frame = NSRect(x: 16, y: 42, width: 526, height: 24)
+        meterView.frame = NSRect(x: 16, y: 44, width: 526, height: 24)
         addSubview(meterView)
 
-        let triggerHeader = SettingsTheme.eyebrow(L("01 / 语音输入方式"))
-        triggerHeader.frame = NSRect(x: 0, y: 98, width: 558, height: 15)
+        let triggerHeader = SettingsTheme.eyebrow(L("语音输入方式"))
+        triggerHeader.frame = NSRect(x: 0, y: 106, width: 558, height: 16)
         addSubview(triggerHeader)
 
         presetPopup.addItems(withTitles: [
-            L("微信语音输入（默认 · 按住 Fn）"),
+            L("微信全局语音输入（按住 Fn）"),
             L("按住右 Option 说话（豆包 / Whisper 等）"),
-            L("点按 Option + Space 开始/结束（系统听写等）"),
-            L("仅把遥控器当麦克风（不发快捷键）"),
+            L("点按 Option + Space 开始或结束（系统听写）"),
+            L("仅作为麦克风收音（不发快捷键）"),
             L("自定义语音触发快捷键…")
         ])
-        presetPopup.font = .systemFont(ofSize: 13, weight: .medium)
+        presetPopup.font = .systemFont(ofSize: 13.5, weight: .medium)
         presetPopup.target = self
         presetPopup.action = #selector(presetChanged)
         presetPopup.setAccessibilityLabel(L("语音输入触发方式"))
-        presetPopup.frame = NSRect(x: 0, y: 120, width: 558, height: 38)
+        presetPopup.frame = NSRect(x: 0, y: 129, width: 558, height: 38)
         addSubview(presetPopup)
 
         presetHintPanel.fill = SettingsTheme.subtleFill
         presetHintPanel.border = nil
         presetHintPanel.radius = 11
-        presetHintPanel.frame = NSRect(x: 0, y: 168, width: 558, height: 62)
+        presetHintPanel.frame = NSRect(x: 0, y: 178, width: 558, height: 62)
         addSubview(presetHintPanel)
 
-        presetHintLabel.font = .systemFont(ofSize: 11)
+        presetHintLabel.font = .systemFont(ofSize: 11.5)
         presetHintLabel.textColor = SettingsTheme.secondary
-        presetHintLabel.frame = NSRect(x: 15, y: 179, width: 528, height: 40)
+        presetHintLabel.frame = NSRect(x: 15, y: 190, width: 528, height: 40)
         addSubview(presetHintLabel)
 
         customModeControl.segmentCount = VoiceTriggerMode.allCases.count
@@ -78,11 +76,11 @@ final class VoiceStudioView: SettingsPage {
         }
         customModeControl.target = self
         customModeControl.action = #selector(customModeChanged)
-        customModeControl.frame = NSRect(x: 0, y: 166, width: 558, height: 34)
+        customModeControl.frame = NSRect(x: 0, y: 176, width: 558, height: 34)
         addSubview(customModeControl)
 
         customRecorder.allowFnOnly = false
-        customRecorder.frame = NSRect(x: 0, y: 208, width: 558, height: 36)
+        customRecorder.frame = NSRect(x: 0, y: 218, width: 558, height: 36)
         customRecorder.onShortcutRecorded = { [weak self] usage, modifiers in
             guard let self else { return }
             self.customUsage = usage
@@ -91,36 +89,31 @@ final class VoiceStudioView: SettingsPage {
         }
         addSubview(customRecorder)
 
-        let optionsHeader = SettingsTheme.eyebrow(L("02 / 通话与连说体验"))
-        optionsHeader.frame = NSRect(x: 0, y: 256, width: 558, height: 15)
+        let optionsHeader = SettingsTheme.eyebrow(L("通话与连说选项"))
+        optionsHeader.frame = NSRect(x: 0, y: 270, width: 558, height: 16)
         addSubview(optionsHeader)
 
         switchMicCheckbox.font = .systemFont(ofSize: 13, weight: .medium)
         switchMicCheckbox.target = self
         switchMicCheckbox.action = #selector(switchMicChanged)
-        switchMicCheckbox.frame = NSRect(x: 0, y: 278, width: 558, height: 22)
+        switchMicCheckbox.frame = NSRect(x: 0, y: 295, width: 558, height: 22)
         addSubview(switchMicCheckbox)
 
-        switchMicDetail.font = .systemFont(ofSize: 11)
+        switchMicDetail.font = .systemFont(ofSize: 11.5)
         switchMicDetail.textColor = SettingsTheme.secondary
-        switchMicDetail.frame = NSRect(x: 22, y: 301, width: 536, height: 26)
+        switchMicDetail.frame = NSRect(x: 22, y: 319, width: 536, height: 26)
         addSubview(switchMicDetail)
 
         fastCheckbox.font = .systemFont(ofSize: 13, weight: .medium)
         fastCheckbox.target = self
         fastCheckbox.action = #selector(fastChanged)
-        fastCheckbox.frame = NSRect(x: 0, y: 331, width: 558, height: 22)
+        fastCheckbox.frame = NSRect(x: 0, y: 354, width: 558, height: 22)
         addSubview(fastCheckbox)
 
-        fastDetail.font = .systemFont(ofSize: 11)
+        fastDetail.font = .systemFont(ofSize: 11.5)
         fastDetail.textColor = SettingsTheme.secondary
-        fastDetail.frame = NSRect(x: 22, y: 354, width: 536, height: 24)
+        fastDetail.frame = NSRect(x: 22, y: 378, width: 536, height: 26)
         addSubview(fastDetail)
-
-        guideButton.target = self
-        guideButton.action = #selector(showGuidePressed)
-        guideButton.frame = NSRect(x: 0, y: 386, width: 196, height: 36)
-        addSubview(guideButton)
 
         captureHorizontalLayout()
         reloadFromSettings()
@@ -138,11 +131,11 @@ final class VoiceStudioView: SettingsPage {
         meterView.level = active ? level : 0
         if active {
             meterStatusLabel.stringValue = testingOnly ?
-                L("正在试麦 · 遥控器麦克风收音正常（切到输入框即可直接说话打字）") :
-                L("正在说话 · 遥控器麦克风信号正常")
+                L("正在试音 · 遥控器收音正常（切回输入框即可说话打字）") :
+                L("正在说话 · 遥控器收音正常")
             meterStatusLabel.textColor = SettingsTheme.accentDot
         } else {
-            meterStatusLabel.stringValue = L("按住手里的遥控器语音键，可直接在这里看麦克风音量条跳动")
+            meterStatusLabel.stringValue = L("按住遥控器语音键试音，下方实时显示收音音量")
             meterStatusLabel.textColor = SettingsTheme.ink
         }
     }
@@ -186,13 +179,13 @@ final class VoiceStudioView: SettingsPage {
             customRecorder.stopRecording()
             switch settings.trigger.normalized {
             case .holdFn:
-                presetHintLabel.stringValue = L("保持微信在后台运行并开启“长按 Fn 全局语音输入”，点击任意输入框后按住遥控器说话即可出字。")
+                presetHintLabel.stringValue = L("保持微信后台运行并开启「长按 Fn 全局语音输入」，点击任意输入框后按住语音键即可打字。")
             case .holdRightOption:
-                presetHintLabel.stringValue = L("按住遥控器语音键时自动按住右 Option，松开自动释放，适合豆包桌面端、Superwhisper 等。")
+                presetHintLabel.stringValue = L("说话期间自动按住右 Option，松手自动释放，适合豆包桌面端、Superwhisper 等工具。")
             case .tapOptionSpace:
-                presetHintLabel.stringValue = L("按下遥控器语音键时点按一次 ⌥Space 开始，松手排空尾音后再点按一次 ⌥Space 结束。")
+                presetHintLabel.stringValue = L("开麦时点按一次 ⌥Space 启动，松手排空尾音后再点按一次 ⌥Space 结束。")
             case .audioOnly:
-                presetHintLabel.stringValue = L("只把遥控器声音送入 Chromecast Mic 虚拟麦克风，不模拟任何键盘按键（无需辅助功能权限）。")
+                presetHintLabel.stringValue = L("仅将遥控器声音送入 Chromecast Mic 虚拟麦克风，不发送任何键盘快捷键。")
             case .custom:
                 break
             }
@@ -243,9 +236,5 @@ final class VoiceStudioView: SettingsPage {
     @objc private func fastChanged() {
         settings.fastTurnaround = fastCheckbox.state == .on
         onSettingsChange?()
-    }
-
-    @objc private func showGuidePressed() {
-        onShowGuide?()
     }
 }

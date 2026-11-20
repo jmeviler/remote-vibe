@@ -12,9 +12,9 @@ final class ComboUnlockView: SettingsPage {
     private let record = SettingsTheme.button(L("录制连招"))
     private let finish = SettingsTheme.button(L("确认录制"))
     private let practice = SettingsTheme.secondaryButton(L("练习"))
-    private let cancel = SettingsTheme.secondaryButton(L("结束 / 取消"))
-    private let save = SettingsTheme.button(L("保存 / 更换密码"))
-    private let clear = SettingsTheme.button(L("清除连招与密码…"), destructive: true)
+    private let cancel = SettingsTheme.secondaryButton(L("取消"))
+    private let save = SettingsTheme.button(L("保存密码"))
+    private let clear = SettingsTheme.button(L("清除设置…"), destructive: true)
     private let verify = SettingsTheme.button(L("开始手动锁屏验证"))
     private let success = SettingsTheme.button(L("看到了测试字符"))
     private let failure = SettingsTheme.secondaryButton(L("没有出现"))
@@ -28,8 +28,8 @@ final class ComboUnlockView: SettingsPage {
         addSubview(intro)
         let surface = SettingsPanel(frame: NSRect(x: 304, y: 0, width: 720, height: 574))
         addSubview(surface)
-        let eyebrow = SettingsTheme.eyebrow("02 / COMBO UNLOCK", light: true)
-        place(eyebrow, x: 24, y: 25, w: 240, h: 17)
+        let eyebrow = SettingsTheme.eyebrow(L("锁屏快捷解锁"), light: true)
+        place(eyebrow, x: 24, y: 24, w: 240, h: 17)
         let heading = SettingsTheme.label(L("把连招，\n变成钥匙。"), size: 30, weight: .semibold, color: SettingsTheme.color(0xF1F5E9))
         heading.maximumNumberOfLines = 2
         place(heading, x: 23, y: 74, w: 240, h: 90)
@@ -43,7 +43,7 @@ final class ComboUnlockView: SettingsPage {
             description.font = .systemFont(ofSize: 11); description.textColor = SettingsTheme.color(0xBBC8B7)
             place(description, x: 63, y: y + 29, w: 195, h: 30)
         }
-        place(SettingsTheme.eyebrow(L("LOCAL ONLY / 仅保存在本机"), light: true), x: 24, y: 536, w: 240, h: 18)
+        place(SettingsTheme.eyebrow(L("仅保存在本机钥匙串"), light: true), x: 24, y: 536, w: 240, h: 18)
         let title = SettingsTheme.label(L("连招解锁"), size: 26, weight: .semibold, color: SettingsTheme.ink)
         place(title, x: 332, y: 25, w: 660, h: 37)
         summary.font = .systemFont(ofSize: 12, weight: .medium); summary.textColor = SettingsTheme.secondary
@@ -101,7 +101,8 @@ final class ComboUnlockView: SettingsPage {
 
     private func updateContents() {
         let idle = controller.mode == .idle && !controller.locked
-        summary.stringValue = L("连招：%@    密码：%@", controller.sequenceLength == 0 ? L("未设置") : L("已保存 %@ 次", String(controller.sequenceLength)), controller.hasPassword ? L("已保存") : L("未设置"))
+        summary.stringValue = L("连招：%@  ·  密码：%@", controller.sequenceLength == 0 ? L("未设置") : L("已保存 %@ 次", String(controller.sequenceLength)), controller.hasPassword ? L("已保存") : L("未设置"))
+        save.title = controller.hasPassword ? L("更换密码") : L("保存密码")
         record.isEnabled = idle; practice.isEnabled = idle && controller.sequenceLength > 0
         finish.isEnabled = controller.mode == .recording && (8...16).contains(controller.recorded.count)
         cancel.isEnabled = controller.mode != .idle

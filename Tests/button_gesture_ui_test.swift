@@ -155,6 +155,19 @@ enum ButtonGestureUITest {
         precondition(!chooser.isHidden && chooser.isEnabled)
         change(reset)
         selectTrigger(0)
+        // Canonical vs alias Shift + Left selection must preserve the chosen section item.
+        choose(L("向左选择 · ⇧←"))
+        precondition(action.titleOfSelectedItem == L("向左选择 · ⇧←"))
+        selectTrigger(1)
+        selectTrigger(0)
+        precondition(action.titleOfSelectedItem == L("向左选择 · ⇧←"))
+        choose("Shift + ←")
+        precondition(action.titleOfSelectedItem == "Shift + ←")
+        selectTrigger(1)
+        selectTrigger(0)
+        precondition(action.titleOfSelectedItem == "Shift + ←")
+        change(reset)
+        selectTrigger(0)
         let voiceIndex = ActionCatalog.presets.firstIndex { $0.binding?.kind == .remoteVoice }!
         let voiceItem = action.itemArray.first { $0.tag == voiceIndex && !$0.isSectionHeader }!
         precondition(voiceItem.isHidden == (profile == .xiaomiRC003))

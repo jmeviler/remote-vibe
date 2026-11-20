@@ -3,11 +3,17 @@ import ApplicationServices
 import CoreBluetooth
 import CoreAudio
 
+private final class FlippedAccessoryView: NSView {
+    override var isFlipped: Bool { true }
+}
+
 final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation {
     private let remote = RemoteController()
     private let xiaomiVoiceKey = XiaomiVoiceKeyOverride()
     private let mic = VirtualMicrophone()
-    private let fn = FnKey()
+    private let voiceSettings = VoiceInputSettings()
+    private let voiceTrigger = VoiceTriggerController()
+    private let launchAtLogin = LaunchAtLoginController()
     private let mapping = KeyMapping()
     private lazy var unlock = ComboUnlock(mapping: mapping)
     private var mappingView: KeyMappingView!
@@ -26,6 +32,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? L("开发版")
     private let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
     private let updateStatus = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let launchAtLoginItem = NSMenuItem(title: L("登录时自动打开"), action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
+    private var voicePresetItems: [(VoiceTrigger, NSMenuItem)] = []
+    private var customVoiceTriggerItem: NSMenuItem!
+    private var switchDefaultMicItem: NSMenuItem!
+    private var fastTurnaroundItem: NSMenuItem!
     private var updateCheck: URLSessionDataTask?
     private var sessionID = UUID()
     private var active = false
@@ -42,9 +53,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private var signalSources: [DispatchSourceSignal] = []
     private var workspaceObservers: [NSObjectProtocol] = []
     private var stopping = false
-    private var lastStatus: Data?
     private let statusURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/RemoteVibe/status.json")
+    private lazy var statusWriter = StatusWriter(url: statusURL)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         try? FileManager.default.createDirectory(at: statusURL.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -70,7 +81,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             return !self.active && !self.remote.voiceBusy && !self.unlock.blocksActions
         }
         mapping.onVoicePress = { [weak self] in
-            guard let self, AXIsProcessTrusted(), !self.mapping.fnHeld, self.mic.connect() else { return false }
+            guard let self else { return false }
+            let needsAX = self.voiceSettings.trigger.requiresAccessibility
+            guard (!needsAX || AXIsProcessTrusted()), !self.mapping.fnHeld, self.mic.connect() else { return false }
             return self.remote.beginMappedVoice()
         }
         mapping.onVoiceRelease = { [weak self] normal in self?.remote.endMappedVoice(normal: normal) }
@@ -127,10 +140,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private func begin() {
         guard !unlock.blocksActions else { remote.cancelVoice(); message.stringValue = L("锁屏或连招录入期间暂停语音"); return }
         if active { remote.cancelVoice(); abort(); message.stringValue = L("请等上一段结束后再说话"); return }
-        guard AXIsProcessTrusted() else { remote.cancelVoice(); message.stringValue = L("请先允许模拟 Fn 按键"); return }
+        let trigger = voiceSettings.trigger
+        let switchInput = voiceSettings.switchDefaultInput
+        let timing = voiceSettings.timing
+        if trigger.requiresAccessibility && !AXIsProcessTrusted() {
+            remote.cancelVoice()
+            message.stringValue = trigger == .holdFn ? L("请先允许模拟 Fn 按键") : L("请先允许辅助功能以发送语音快捷键")
+            return
+        }
         voiceTiming.begin(at: ProcessInfo.processInfo.systemUptime)
         drainTimedOut = false
-        guard mic.begin() else {
+        guard mic.begin(switchDefaultInput: switchInput) else {
             voiceTiming.finish(at: ProcessInfo.processInfo.systemUptime, cancelled: true)
             remote.cancelVoice(); message.stringValue = L("语音组件暂不可用，请检查安装或稍后重试")
             refreshReadiness(); writeStatus(); return
@@ -145,21 +165,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         updateDiscoveryButton()
         mapping.cancelPendingActions()
         updateStatusItem()
-        message.stringValue = L("正在准备微信语音输入…")
-        // Change the input before Fn starts WeChat's capture session.
-        voiceSchedule.after(0.2) { [weak self] in
+        message.stringValue = trigger == .holdFn ? L("正在准备微信语音输入…") : L("正在准备语音输入…")
+        let startTrigger: () -> Void = { [weak self] in
             guard let self, self.sessionID == id, self.active, !self.released else { return }
-            guard self.fn.down() else { self.remote.cancelVoice(); self.abort(); self.message.stringValue = L("Fn 已被按住或没有权限，请重试"); return }
-            self.fnDowns += 1
+            guard self.voiceTrigger.activate(trigger) else {
+                self.remote.cancelVoice(); self.abort()
+                self.message.stringValue = trigger == .holdFn ? L("Fn 已被按住或没有权限，请重试") : L("语音触发键已被占用或缺少权限，请重试")
+                return
+            }
+            if trigger != .audioOnly { self.fnDowns += 1 }
             self.voiceTiming.mark("fnDown", at: ProcessInfo.processInfo.systemUptime)
             self.message.stringValue = L("正在说话 · 松开当前按键结束")
             // Retain the first syllables while WeChat opens its microphone.
-            self.voiceSchedule.after(0.55) { [weak self] in
+            self.voiceSchedule.after(timing.preDrainDelay) { [weak self] in
                 guard let self, self.sessionID == id, self.active else { return }
                 self.drainStarted = true
                 self.mic.startDraining()
                 self.voiceTiming.mark("drainStarted", at: ProcessInfo.processInfo.systemUptime)
             }
+        }
+        // Change the input before Fn starts WeChat's capture session.
+        if timing.preTriggerDelay > 0 {
+            voiceSchedule.after(timing.preTriggerDelay, action: startTrigger)
+        } else {
+            startTrigger()
         }
         refreshReadiness(); writeStatus()
     }
@@ -168,10 +197,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         guard active else { return }
         guard normal else { abort(); return }
         guard !released else { return }
-        guard fn.held else { abort(); return }
+        guard voiceTrigger.active else { abort(); return }
         released = true
+        let trigger = voiceSettings.trigger
+        let timing = voiceSettings.timing
         voiceTiming.mark("audioStopped", at: ProcessInfo.processInfo.systemUptime)
-        message.stringValue = L("正在结束，文字由微信生成…")
+        message.stringValue = trigger == .holdFn ? L("正在结束，文字由微信生成…") : L("正在结束语音输入…")
         let id = sessionID
         voiceSchedule.waitForDrain(ready: { [weak self] in
             guard let self else { return true }
@@ -180,11 +211,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             guard let self, self.sessionID == id, self.active else { return }
             self.drainTimedOut = timedOut
             self.voiceTiming.mark("drainFinished", at: ProcessInfo.processInfo.systemUptime)
-            self.voiceSchedule.after(0.2) { [weak self] in
+            self.voiceSchedule.after(timing.postDrainDelay) { [weak self] in
                 guard let self, self.sessionID == id else { return }
-                if self.fn.held { self.fn.up(); self.fnUps += 1 }
+                if self.voiceTrigger.active {
+                    self.voiceTrigger.deactivate()
+                    if trigger != .audioOnly { self.fnUps += 1 }
+                }
                 self.voiceTiming.mark("fnUp", at: ProcessInfo.processInfo.systemUptime)
-                self.voiceSchedule.after(0.8) { [weak self] in
+                self.voiceSchedule.after(timing.postReleaseDelay) { [weak self] in
                     guard let self, self.sessionID == id else { return }
                     self.mic.end()
                     self.active = false
@@ -207,7 +241,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private func abort() {
         sessionID = UUID()
         voiceSchedule.cancel()
-        if fn.held { fn.up(); fnUps += 1; voiceTiming.mark("fnUp", at: ProcessInfo.processInfo.systemUptime) }
+        let hadKey = voiceSettings.trigger != .audioOnly
+        if voiceTrigger.active {
+            voiceTrigger.deactivate()
+            if hadKey { fnUps += 1 }
+            voiceTiming.mark("fnUp", at: ProcessInfo.processInfo.systemUptime)
+        }
         mic.end()
         voiceTiming.finish(at: ProcessInfo.processInfo.systemUptime, cancelled: true)
         active = false; released = false
@@ -239,8 +278,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         }
         xiaomiVoiceKey.refresh(enabled: remote.xiaomiReady)
         _ = mic.connect()
+        syncVoiceMenuStates()
+        syncLaunchAtLoginItem()
         refreshReadiness()
-        if CBCentralManager.authorization == .allowedAlways && !allowPrompted && !AXIsProcessTrusted() {
+        if CBCentralManager.authorization == .allowedAlways && !allowPrompted && voiceSettings.trigger.requiresAccessibility && !AXIsProcessTrusted() {
             allowPrompted = true
             // This only registers the app in the system permission list.
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
@@ -255,13 +296,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private func refreshReadiness() {
         guard settingsVisible else { return }
         let accessibility = AXIsProcessTrusted(), inputMonitoring = mapping.listeningAllowed
-        audioLabel.stringValue = mic.available ? L("语音组件：已就绪") : L("语音组件：需要安装")
+        audioLabel.stringValue = !mic.available ? L("语音组件：需要安装") :
+            mic.driverNeedsUpdate ? L("语音组件：需运行完整安装包更新") :
+            voiceSettings.switchDefaultInput ? L("语音组件：已就绪") : L("语音组件：已就绪（免切默认麦）")
         permission.stringValue = L("辅助功能：%@\n输入监控：%@", accessibility ? L("已允许") : L("未允许"), inputMonitoring ? L("已允许") : L("未允许（自定义按键）"))
         permissionsButton.title = !accessibility ? L("允许辅助功能") : !inputMonitoring ? L("允许输入监控") : L("权限设置")
         var missing: [String] = []
         if !remote.ready { missing.append(L("连接遥控器")) }
         if !mic.available { missing.append(L("安装语音组件")) }
-        if !accessibility { missing.append(L("允许辅助功能")) }
+        else if mic.driverNeedsUpdate { missing.append(L("更新语音组件")) }
+        if voiceSettings.trigger.requiresAccessibility && !accessibility { missing.append(L("允许辅助功能")) }
         if remote.xiaomiReady && !xiaomiVoiceKey.ready { missing.append(L("重新连接小米语音键")) }
         if !missing.isEmpty {
             readiness.stringValue = L("语音待就绪 · ") + missing.joined(separator: " · ")
@@ -271,6 +315,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             readiness.stringValue = L("语音处理中 · 请等待本次结束")
         } else if mapping.fnHeld {
             readiness.stringValue = L("语音等待 · 请先松开 Fn 按键")
+        } else if voiceSettings.trigger != .holdFn || !voiceSettings.switchDefaultInput {
+            readiness.stringValue = L("设备已就绪 · %@ · %@", voiceSettings.trigger.summaryTitle,
+                                      voiceSettings.switchDefaultInput ? L("临时切换默认输入") : L("固定输入源 Chromecast Mic"))
         } else {
             readiness.stringValue = inputMonitoring ? L("设备与权限已就绪 · 微信语音请试说确认") :
                 L("语音设备已就绪 · 自定义按键需输入监控 · 微信请试说确认")
@@ -317,6 +364,29 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             configurations.addItem(withTitle: title, action: action, keyEquivalent: "").target = self
         }
         menu.addItem(withTitle: L("键位配置"), action: nil, keyEquivalent: "").submenu = configurations
+        let voiceMenu = NSMenu(title: L("语音输入设置"))
+        let presets: [(VoiceTrigger, String)] = [
+            (.holdFn, L("按住 Fn（微信默认）")),
+            (.holdRightOption, L("按住右 Option")),
+            (.tapOptionSpace, L("点按 Option + Space 开始/结束")),
+            (.audioOnly, L("仅送音（不发快捷键）"))
+        ]
+        for (index, entry) in presets.enumerated() {
+            let presetItem = voiceMenu.addItem(withTitle: entry.1, action: #selector(selectVoiceTriggerPreset(_:)), keyEquivalent: "")
+            presetItem.tag = index
+            presetItem.target = self
+            voicePresetItems.append((entry.0, presetItem))
+        }
+        customVoiceTriggerItem = voiceMenu.addItem(withTitle: L("自定义语音触发键…"), action: #selector(configureCustomVoiceTrigger), keyEquivalent: "")
+        customVoiceTriggerItem.target = self
+        voiceMenu.addItem(.separator())
+        switchDefaultMicItem = voiceMenu.addItem(withTitle: L("说话时切换系统默认麦克风"), action: #selector(toggleSwitchDefaultMic), keyEquivalent: "")
+        switchDefaultMicItem.target = self
+        fastTurnaroundItem = voiceMenu.addItem(withTitle: L("快速连续说话（缩短缓冲等待）"), action: #selector(toggleFastTurnaround), keyEquivalent: "")
+        fastTurnaroundItem.target = self
+        menu.addItem(withTitle: L("语音输入设置"), action: nil, keyEquivalent: "").submenu = voiceMenu
+        menu.addItem(.separator())
+        menu.addItem(launchAtLoginItem)
         menu.addItem(.separator())
         menu.addItem(withTitle: L("检查更新…"), action: #selector(checkForUpdates), keyEquivalent: "")
         updateStatus.isHidden = true
@@ -326,6 +396,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         menu.addItem(withTitle: L("退出"), action: #selector(quit), keyEquivalent: "q")
         for entry in menu.items { entry.target = self }
         item.menu = menu
+        syncVoiceMenuStates()
+        syncLaunchAtLoginItem()
         let visible = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1440, height: 900)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: min(1080, visible.width - 64), height: min(812, visible.height - 76)),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -362,7 +434,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     }
 
     @objc private func show() {
-        unlock.reload(); window.makeKeyAndOrderFront(nil); NSApplication.shared.activate(ignoringOtherApps: true)
+        unlock.reload(); window.makeKeyAndOrderFront(nil); NSApplication.shared.activate()
         refresh()
     }
     @objc private func changeRemote() {
@@ -426,11 +498,144 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        let idleForConfig = !active && !remote.voiceBusy && !unlock.blocksActions && window.attachedSheet == nil
         if [#selector(importMappings), #selector(exportMappings), #selector(restoreMappings)].contains(menuItem.action) {
-            return !active && !remote.voiceBusy && !unlock.blocksActions && window.attachedSheet == nil
+            return idleForConfig
+        }
+        if [#selector(selectVoiceTriggerPreset(_:)), #selector(configureCustomVoiceTrigger),
+            #selector(toggleSwitchDefaultMic), #selector(toggleFastTurnaround)].contains(menuItem.action) {
+            syncVoiceMenuStates()
+            return idleForConfig
+        }
+        if menuItem.action == #selector(toggleLaunchAtLogin) {
+            syncLaunchAtLoginItem()
+            return true
         }
         if menuItem.action == #selector(exitMouseMode) { return mapping.mouseModeActive }
         return menuItem.action != #selector(checkForUpdates) || updateCheck == nil
+    }
+
+    private func syncVoiceMenuStates() {
+        let current = voiceSettings.trigger
+        for (preset, menuItem) in voicePresetItems {
+            menuItem.state = current == preset ? .on : .off
+        }
+        customVoiceTriggerItem?.state = current.isCustom ? .on : .off
+        customVoiceTriggerItem?.title = current.isCustom ? L("%@…", current.summaryTitle) : L("自定义语音触发键…")
+        switchDefaultMicItem?.state = voiceSettings.switchDefaultInput ? .on : .off
+        fastTurnaroundItem?.state = voiceSettings.fastTurnaround ? .on : .off
+    }
+
+    private func syncLaunchAtLoginItem() {
+        switch launchAtLogin.state {
+        case .enabled: launchAtLoginItem.state = .on
+        case .requiresApproval: launchAtLoginItem.state = .mixed
+        case .notRegistered, .notFound: launchAtLoginItem.state = .off
+        }
+    }
+
+    @objc private func selectVoiceTriggerPreset(_ sender: NSMenuItem) {
+        guard !active, !remote.voiceBusy, !unlock.blocksActions,
+              voicePresetItems.indices.contains(sender.tag) else { return }
+        voiceSettings.trigger = voicePresetItems[sender.tag].0
+        syncVoiceMenuStates()
+        message.stringValue = L("语音触发方式已设为：%@", voiceSettings.trigger.summaryTitle)
+        refreshReadiness()
+        writeStatus()
+    }
+
+    @objc private func toggleSwitchDefaultMic() {
+        guard !active, !remote.voiceBusy, !unlock.blocksActions else { return }
+        voiceSettings.switchDefaultInput.toggle()
+        syncVoiceMenuStates()
+        message.stringValue = voiceSettings.switchDefaultInput ?
+            L("已开启说话时自动切换系统默认麦克风") :
+            L("已关闭切换系统默认麦克风；请在目标软件将输入设备设为 Chromecast Mic")
+        refreshReadiness()
+        writeStatus()
+    }
+
+    @objc private func toggleFastTurnaround() {
+        guard !active, !remote.voiceBusy, !unlock.blocksActions else { return }
+        voiceSettings.fastTurnaround.toggle()
+        syncVoiceMenuStates()
+        message.stringValue = voiceSettings.fastTurnaround ?
+            L("已开启快速连续说话（若首字缺失可关闭此项）") :
+            L("已恢复标准缓冲等待时间")
+        refreshReadiness()
+        writeStatus()
+    }
+
+    @objc private func configureCustomVoiceTrigger() {
+        guard !active, !remote.voiceBusy, !unlock.blocksActions else { return }
+        show()
+        guard window.attachedSheet == nil else { return }
+        let accessory = FlippedAccessoryView(frame: NSRect(x: 0, y: 0, width: 396, height: 142))
+        let modeControl = NSSegmentedControl(labels: VoiceTriggerMode.allCases.map(\.title), trackingMode: .selectOne, target: nil, action: nil)
+        modeControl.frame = NSRect(x: 0, y: 4, width: 396, height: 28)
+        modeControl.segmentDistribution = .fillEqually
+        accessory.addSubview(modeControl)
+
+        let modifierEntries: [(String, CGEventFlags)] = [
+            ("⌃ Control", .maskControl), ("⇧ Shift", .maskShift), ("⌥ Option", .maskAlternate),
+            ("⌘ Command", .maskCommand), ("Fn", .maskSecondaryFn)
+        ]
+        var checkboxes: [(NSButton, CGEventFlags)] = []
+        for (index, entry) in modifierEntries.enumerated() {
+            let box = NSButton(checkboxWithTitle: entry.0, target: nil, action: nil)
+            box.font = .systemFont(ofSize: 12)
+            box.frame = NSRect(x: CGFloat(index % 3) * 132, y: 44 + CGFloat(index / 3) * 26, width: 126, height: 22)
+            accessory.addSubview(box)
+            checkboxes.append((box, entry.1))
+        }
+
+        let keyPopup = NSPopUpButton(frame: NSRect(x: 0, y: 106, width: 396, height: 28), pullsDown: false)
+        keyPopup.addItems(withTitles: MappingKey.all.map(\.name))
+        accessory.addSubview(keyPopup)
+
+        if case let .custom(mode, usage, modifiers) = voiceSettings.trigger {
+            modeControl.selectedSegment = VoiceTriggerMode.allCases.firstIndex(of: mode) ?? 0
+            keyPopup.selectItem(at: MappingKey.all.firstIndex { $0.usage == usage } ?? 0)
+            let flags = CGEventFlags(rawValue: modifiers)
+            for (box, flag) in checkboxes { box.state = flags.contains(flag) ? .on : .off }
+        } else {
+            modeControl.selectedSegment = 0
+            keyPopup.selectItem(at: MappingKey.all.firstIndex { $0.usage == 0x2C } ?? 0)
+            for (box, flag) in checkboxes { box.state = flag == .maskAlternate ? .on : .off }
+        }
+
+        let alert = NSAlert()
+        alert.messageText = L("自定义语音触发快捷键")
+        alert.informativeText = L("选择遥控器语音开始和结束时发送的快捷键，可用于系统听写、豆包、Superwhisper 等语音软件。")
+        alert.accessoryView = accessory
+        alert.addButton(withTitle: L("保存"))
+        alert.addButton(withTitle: L("取消"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .alertFirstButtonReturn else { return }
+            let selectedKey = MappingKey.all[max(0, keyPopup.indexOfSelectedItem)]
+            let trigger: VoiceTrigger
+            if selectedKey.usage == MappingKey.fnUsage {
+                trigger = .holdFn
+            } else {
+                let mode = VoiceTriggerMode.allCases[max(0, modeControl.selectedSegment)]
+                let flags = checkboxes.filter { $0.0.state == .on }.reduce(UInt64(0)) { $0 | $1.1.rawValue }
+                trigger = .custom(mode: mode, usage: selectedKey.usage, modifiers: flags)
+            }
+            self.voiceSettings.trigger = trigger
+            self.syncVoiceMenuStates()
+            self.message.stringValue = L("语音触发方式已设为：%@", self.voiceSettings.trigger.summaryTitle)
+            self.refreshReadiness()
+            self.writeStatus()
+        }
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        let feedback = launchAtLogin.toggle()
+        syncLaunchAtLoginItem()
+        if !active && !remote.voiceBusy {
+            message.stringValue = feedback
+        }
+        writeStatus()
     }
 
     private func showMappings() -> Bool {
@@ -491,14 +696,17 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     @objc private func stopVoice() { mapping.suspendActions(); remote.cancelVoice(); abort() }
     @objc private func quit() { NSApplication.shared.terminate(nil) }
 
-    private func writeStatus() {
-        var status: [String: Any] = [
+    private func buildStatusPayload() -> [String: Any] {
+        [
             "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown",
-            "mode": "wechat-hold-fn",
+            "mode": voiceSettings.trigger.identifier,
+            "voiceTrigger": voiceSettings.trigger.summaryTitle,
+            "switchDefaultInput": voiceSettings.switchDefaultInput,
+            "fastTurnaround": voiceSettings.fastTurnaround,
             "bluetoothAuthorization": CBCentralManager.authorization.rawValue,
             "accessibility": AXIsProcessTrusted(), "connected": remote.ready,
-            "microphoneReady": mic.available, "recording": remote.streaming,
-            "sessionActive": active, "fnHeld": fn.held || mapping.fnHeld, "mappedFnHeld": mapping.fnHeld, "fnDowns": fnDowns, "fnUps": fnUps,
+            "microphoneReady": mic.available, "driverNeedsUpdate": mic.driverNeedsUpdate, "recording": remote.streaming,
+            "sessionActive": active, "fnHeld": voiceTrigger.fnHeld || mapping.fnHeld, "mappedFnHeld": mapping.fnHeld, "fnDowns": fnDowns, "fnUps": fnUps,
             "audioFrames": remote.frameCount, "fedSamples": mic.fedFrames, "renderedSamples": mic.renderedFrames,
             "voiceTiming": voiceTiming.diagnostics, "audioBuffer": mic.bufferDiagnostics, "drainTimedOut": drainTimedOut,
             "completedSessions": completedSessions, "status": message.stringValue,
@@ -509,6 +717,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             "mappedVoiceHeld": mapping.mappedVoiceHeld, "mappedVoiceActive": remote.mappedVoiceActive, "voiceBusy": remote.voiceBusy,
             "xiaomiVoiceKeyReady": xiaomiVoiceKey.ready, "xiaomiVoiceKeyStatus": xiaomiVoiceKey.status,
             "mouseModeActive": mapping.mouseModeActive,
+            "launchAtLogin": launchAtLogin.state.rawValue,
             "keyMappingStatus": mapping.status, "keyMappingConnected": mapping.connected,
             "configurationNotice": mapping.configurationNotice ?? "",
             "inputMonitoring": mapping.listeningAllowed,
@@ -517,11 +726,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             "maintenanceInterval": poll?.timeInterval ?? 0,
             "defaultInput": AudioDevices.string(AudioDevices.defaultInput(), kAudioObjectPropertyName) ?? "none"
         ]
-        guard let snapshot = try? JSONSerialization.data(withJSONObject: status, options: [.sortedKeys]), snapshot != lastStatus else { return }
-        status["updated"] = ISO8601DateFormatter().string(from: Date())
-        if let data = try? JSONSerialization.data(withJSONObject: status, options: [.prettyPrinted, .sortedKeys]) {
-            do { try data.write(to: statusURL, options: .atomic); lastStatus = snapshot } catch { /* Diagnostics must not interrupt input. */ }
-        }
+    }
+
+    private func writeStatus() {
+        statusWriter.schedule(buildStatusPayload())
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -534,6 +742,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         mapping.onFnChange = nil
         mapping.onMouseModeChange = nil
         poll?.invalidate(); unlock.stop(); mapping.stop(); remote.shutdown(); xiaomiVoiceKey.stop(); abort(); mic.stop()
+        statusWriter.flushSync(buildStatusPayload())
     }
 }
 
@@ -544,7 +753,7 @@ enum Main {
         if let existing = NSRunningApplication.runningApplications(withBundleIdentifier: "local.ben.RemoteVibe")
             .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
             if let url = existing.bundleURL { NSWorkspace.shared.open(url) }
-            else { existing.activate(options: []) }
+            else { _ = existing.activate() }
             return
         }
         let app = NSApplication.shared

@@ -56,6 +56,11 @@ jobs:
             build/share/*.zip
             build/share/SHA256SUMS-${{ matrix.chip }}.txt
           if-no-files-found: error
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: Design-Previews-${{ matrix.chip }}
+          path: build/design/ci-check/*.png
+          if-no-files-found: error
 
   release-assets:
     needs: build

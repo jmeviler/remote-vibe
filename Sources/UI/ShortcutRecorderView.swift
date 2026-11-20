@@ -178,7 +178,7 @@ final class ShortcutRecorderControl: NSButton {
         }
 
         if window?.firstResponder === self && !isRecording {
-            NSColor.keyboardFocusIndicatorColor.setStroke()
+            SettingsTheme.forest.withAlphaComponent(0.75).setStroke()
             let focus = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 11, yRadius: 11)
             focus.lineWidth = 2
             focus.stroke()
@@ -201,21 +201,21 @@ final class VoiceLevelMeterView: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        let count = 24
-        let gap: CGFloat = 4
+        let count = 40
+        let gap: CGFloat = 5
         let totalGap = CGFloat(count - 1) * gap
         let barWidth = max(3, (bounds.width - totalGap) / CGFloat(count))
         let litCount = active ? max(1, Int((level * Float(count)).rounded(.up))) : 0
         for index in 0..<count {
             let x = CGFloat(index) * (barWidth + gap)
-            let barRect = NSRect(x: x, y: 2, width: barWidth, height: bounds.height - 4)
-            let pill = NSBezierPath(roundedRect: barRect, xRadius: barWidth / 2, yRadius: barWidth / 2)
+            let barRect = NSRect(x: x, y: 3, width: barWidth, height: bounds.height - 6)
+            let pill = NSBezierPath(roundedRect: barRect, xRadius: min(3.5, barWidth / 2), yRadius: min(3.5, barWidth / 2))
             if index < litCount {
                 let ratio = CGFloat(index) / CGFloat(max(1, count - 1))
-                let fill = ratio > 0.8 ? SettingsTheme.warning : SettingsTheme.accentDot
+                let fill = ratio > 0.82 ? SettingsTheme.warning : SettingsTheme.accentDot
                 fill.setFill()
             } else {
-                SettingsTheme.line.setFill()
+                SettingsTheme.adaptive(light: 0xD7DDD1, dark: 0x2F3B33).setFill()
             }
             pill.fill()
         }

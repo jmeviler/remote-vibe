@@ -578,3 +578,4 @@
 "适合一句接一句连续说话；如果开头偶发漏掉第一个字可关闭。" = "Reduces turnaround wait between sentences; turn off if initial syllables are clipped.";
 "遥控器麦克风 · 当前：%@" = "Remote Microphone · Active: %@";
 "键盘快捷键录制" = "Keyboard shortcut recorder";
+"%@ KEYS   /   按实体键可自动跳到对应设置" = "%@ KEYS   /   Press physical key to select";

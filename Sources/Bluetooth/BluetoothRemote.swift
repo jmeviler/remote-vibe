@@ -16,6 +16,8 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     private let audio: RemoteAudioSession
     private var proto: ATVVProtocol { audio.proto }
     private var modelConfirmed = false
+    private var connectedViaRemembered = false
+    private var pendingIdentityChecks = Set<String>()
     private let timers = BluetoothTimers()
     private var retryCount = 0
     private var rememberedKey: String { "voicePeripheral.\(profile.rawValue).v1" }
@@ -80,7 +82,7 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard !stopping, central.state == .poweredOn, peripheral == nil else { return }
         if let value = UserDefaults.standard.string(forKey: rememberedKey), let id = UUID(uuidString: value),
            let known = central.retrievePeripherals(withIdentifiers: [id]).first {
-            connect(known); return
+            connect(known, remembered: true); return
         }
         if connectSystemDevice() { return }
         onStatus(L("尚未连接，请先在系统蓝牙配对；需要时手动扫描"))
@@ -91,6 +93,12 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             .filter { profile.accepts(name: $0.name) }
         if matches.count == 1 { connect(matches[0]); return true }
         if matches.count > 1 { onStatus(L("发现多个遥控器，请只连接要使用的那一个")); return true }
+        if profile == .chromecast {
+            let fallback = central.retrieveConnectedPeripherals(withServices: [CBUUID(string: ATVVProtocol.serviceUUID)])
+                .filter { profile.evaluateATVVDevice(name: $0.name) != .rejectedWrongProfile }
+            if fallback.count == 1 { connect(fallback[0]); return true }
+            if fallback.count > 1 { onStatus(L("发现多个遥控器，请只连接要使用的那一个")); return true }
+        }
         return false
     }
 
@@ -132,9 +140,10 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         if scanning { central.stopScan() }
     }
 
-    private func connect(_ p: CBPeripheral) {
+    private func connect(_ p: CBPeripheral, remembered: Bool = false) {
         stopScanning()
         timers.cancel(.reconnect)
+        connectedViaRemembered = remembered
         peripheral = p
         p.delegate = self
         onStatus(L("正在等待遥控器连接，按键可唤醒"))
@@ -143,7 +152,12 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
 
     func centralManager(_ central: CBCentralManager, didDiscover p: CBPeripheral, advertisementData: [String: Any], rssi RSSI: NSNumber) {
         guard !stopping, scanning, peripheral == nil else { return }
-        if profile.accepts(name: p.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String) { connect(p) }
+        let advertisedName = p.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String
+        if profile == .chromecast {
+            if profile.evaluateATVVDevice(name: advertisedName) != .rejectedWrongProfile { connect(p) }
+        } else if profile.accepts(name: advertisedName) {
+            connect(p)
+        }
     }
 
     func centralManager(_ central: CBCentralManager, didConnect p: CBPeripheral) {
@@ -157,9 +171,11 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         onStatus(L("正在初始化遥控器语音"))
         audio.reset()
         subscribed.removeAll()
+        pendingIdentityChecks.removeAll()
         handshakeSent = false
-        modelConfirmed = profile == .chromecast
-        p.discoverServices([CBUUID(string: ATVVProtocol.serviceUUID)] + (profile == .xiaomiRC003 ? [CBUUID(string: "180A")] : []))
+        modelConfirmed = profile == .chromecast && (connectedViaRemembered || profile.accepts(name: p.name))
+        let needsDeviceInfo = !modelConfirmed
+        p.discoverServices([CBUUID(string: ATVVProtocol.serviceUUID)] + (needsDeviceInfo ? [CBUUID(string: "180A")] : []))
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect p: CBPeripheral, error: Error?) { if p === peripheral { disconnected() } }
@@ -186,19 +202,47 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         guard p === peripheral else { return }
         guard error == nil, let service = p.services?.first(where: { $0.uuid == CBUUID(string: ATVVProtocol.serviceUUID) }) else { onStatus(L("读取语音服务失败")); return }
         p.discoverCharacteristics(nil, for: service)
-        if profile == .xiaomiRC003, let info = p.services?.first(where: { $0.uuid == CBUUID(string: "180A") }) {
-            p.discoverCharacteristics([CBUUID(string: "2A24")], for: info)
+        if !modelConfirmed {
+            if let info = p.services?.first(where: { $0.uuid == CBUUID(string: "180A") }) {
+                let ids = profile == .xiaomiRC003 ? [CBUUID(string: "2A24")] : [CBUUID(string: "2A24"), CBUUID(string: "2A50")]
+                p.discoverCharacteristics(ids, for: info)
+            } else if profile == .chromecast {
+                modelConfirmed = true
+                negotiate()
+            }
         }
     }
 
     func peripheral(_ p: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard p === peripheral else { return }
+        if service.uuid == CBUUID(string: "180A") {
+            if profile == .chromecast {
+                guard error == nil else { modelConfirmed = true; negotiate(); return }
+                let readable = (service.characteristics ?? []).filter {
+                    ["2A24", "2A50"].contains($0.uuid.uuidString.uppercased()) && $0.properties.contains(.read)
+                }
+                if readable.isEmpty {
+                    modelConfirmed = true
+                    negotiate()
+                } else {
+                    for c in readable {
+                        pendingIdentityChecks.insert(c.uuid.uuidString.uppercased())
+                        p.readValue(for: c)
+                    }
+                }
+                return
+            }
+            guard error == nil else { onStatus(L("读取语音通道失败")); return }
+            for c in service.characteristics ?? [] where c.uuid.uuidString.uppercased() == "2A24" {
+                p.readValue(for: c)
+            }
+            return
+        }
         guard error == nil else { onStatus(L("读取语音通道失败")); return }
         for c in service.characteristics ?? [] {
             switch c.uuid.uuidString.uppercased() {
             case ATVVProtocol.txUUID: command = c
             case ATVVProtocol.rxUUID, ATVVProtocol.controlUUID: p.setNotifyValue(true, for: c)
-            case "2A24": p.readValue(for: c)
             default: break
             }
         }
@@ -223,14 +267,56 @@ final class BluetoothRemote: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         peripheral.writeValue(data, for: command, type: command.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse)
     }
 
+    private func rejectWrongProfile(_ p: CBPeripheral, status: String) {
+        timers.cancel(.initialization)
+        pendingIdentityChecks.removeAll()
+        command = nil
+        peripheral = nil
+        audio.reset()
+        central.cancelPeripheralConnection(p)
+        onStatus(status)
+    }
+
     func peripheral(_ p: CBPeripheral, didUpdateValueFor c: CBCharacteristic, error: Error?) {
-        guard p === peripheral, !stopping, error == nil, let data = c.value else { return }
-        if c.uuid == CBUUID(string: "2A24") {
+        guard p === peripheral, !stopping else { return }
+        let uuid = c.uuid.uuidString.uppercased()
+        if uuid == "2A24" || uuid == "2A50" {
+            if profile == .chromecast {
+                pendingIdentityChecks.remove(uuid)
+                if error == nil, let data = c.value {
+                    if uuid == "2A50", let vid = RemoteProfile.parsePnPVendorID(data) {
+                        let decision = profile.evaluateATVVDevice(name: p.name, vendorID: vid)
+                        if decision == .rejectedWrongProfile {
+                            rejectWrongProfile(p, status: L("检测到小米遥控器，请在顶部切换型号"))
+                            return
+                        }
+                        if decision == .accepted {
+                            pendingIdentityChecks.removeAll()
+                            modelConfirmed = true
+                            negotiate()
+                            return
+                        }
+                    } else if uuid == "2A24" {
+                        let model = String(data: data, encoding: .utf8)
+                        if profile.evaluateATVVDevice(name: p.name, modelNumber: model) == .rejectedWrongProfile {
+                            rejectWrongProfile(p, status: L("检测到小米遥控器，请在顶部切换型号"))
+                            return
+                        }
+                    }
+                }
+                if pendingIdentityChecks.isEmpty && !modelConfirmed {
+                    modelConfirmed = true
+                    negotiate()
+                }
+                return
+            }
+            guard error == nil, let data = c.value else { return }
             modelConfirmed = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) == "RC003"
             if modelConfirmed { negotiate() } else { onStatus(L("这款小米型号暂未适配，仅支持 RC003")) }
             return
         }
-        if c.uuid.uuidString.uppercased() == ATVVProtocol.rxUUID {
+        guard error == nil, let data = c.value else { return }
+        if uuid == ATVVProtocol.rxUUID {
             audio.receiveAudio(data)
             return
         }

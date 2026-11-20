@@ -51,6 +51,11 @@ protocol MicrophoneHardware {
     func setDefaultInput(_ device: AudioDeviceID) -> Bool
     func writer(_ device: AudioDeviceID, render: @escaping (UnsafeMutablePointer<AudioBufferList>) -> Void) -> MicrophoneWriter?
     func observe(_ changed: @escaping (_ serviceRestarted: Bool) -> Void) -> (() -> Void)?
+    func driverBuildVersion() -> Int?
+}
+
+extension MicrophoneHardware {
+    func driverBuildVersion() -> Int? { VirtualMicrophone.expectedDriverBuild }
 }
 
 private final class CoreAudioWriter: MicrophoneWriter {
@@ -99,9 +104,16 @@ struct CoreMicrophoneHardware: MicrophoneHardware {
         guard !registered.isEmpty else { return nil }
         return { for var address in registered { AudioObjectRemovePropertyListenerBlock(system, &address, .main, block) } }
     }
+    func driverBuildVersion() -> Int? {
+        guard let dict = NSDictionary(contentsOfFile: VirtualMicrophone.driverInfoPlistPath),
+              let raw = dict["CFBundleVersion"] as? String else { return nil }
+        return Int(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
 }
 
 final class VirtualMicrophone {
+    static let expectedDriverBuild = 1
+    static let driverInfoPlistPath = "/Library/Audio/Plug-Ins/HAL/RemoteVibeMic.driver/Contents/Info.plist"
     private var device: AudioDeviceID?
     private var writer: MicrophoneWriter?
     private let hardware: MicrophoneHardware
@@ -111,25 +123,28 @@ final class VirtualMicrophone {
     var onUnavailable: () -> Void = {}
     var onAvailabilityChange: () -> Void = {}
     private var running = false
-    private let lock = NSLock()
-    private var ring = [Float](repeating: 0, count: 48000 * 4)
-    private var readIndex = 0
-    private var writeIndex = 0
-    private var count = 0
-    private var draining = false
-    private var enabled = false
-    private var rendered = 0
-    private var fed = 0
-    private var dropped = 0
-    private var peakBuffered = 0
+    private let ring: UnsafeMutablePointer<RVAudioRing>
+    private let producerLock = NSLock()
+    private var scratch: [Float] = []
     private var priorUID: String?
     private var dcX: Float = 0
     private var dcY: Float = 0
+    private var historyPrev: Float = 0
     private var previousSample: Float = 0
     var available: Bool { device != nil }
+    var driverNeedsUpdate: Bool {
+        available && (hardware.driverBuildVersion() ?? Self.expectedDriverBuild) < Self.expectedDriverBuild
+    }
 
     init(hardware: MicrophoneHardware = CoreMicrophoneHardware(), preferences: UserDefaults = .standard) {
+        guard let allocated = RVAudioRingCreate() else { fatalError("Unable to allocate audio ring buffer") }
+        self.ring = allocated
         self.hardware = hardware; self.preferences = preferences
+        scratch.reserveCapacity(1536)
+    }
+
+    deinit {
+        RVAudioRingDestroy(ring)
     }
 
     private func observe() {
@@ -164,16 +179,20 @@ final class VirtualMicrophone {
         return true
     }
 
-    func begin() -> Bool {
+    func begin(switchDefaultInput: Bool = true) -> Bool {
         guard !running else { return false }
         // A stale IOProc can fail even while its device ID still resolves. Retry once
         // with a fresh writer; never replay an interrupted recording automatically.
         for _ in 0..<2 {
             guard connect(), let device, let writer else { return false }
-            let original = hardware.defaultInput()
-            priorUID = original != device ? hardware.uid(original) : nil
-            if let priorUID { preferences.set(priorUID, forKey: "restoreInputUID") }
-            guard hardware.setDefaultInput(device) else { invalidateConnection(); continue }
+            if switchDefaultInput {
+                let original = hardware.defaultInput()
+                priorUID = original != device ? hardware.uid(original) : nil
+                if let priorUID { preferences.set(priorUID, forKey: "restoreInputUID") }
+                guard hardware.setDefaultInput(device) else { invalidateConnection(); continue }
+            } else {
+                priorUID = nil
+            }
             prepareBuffer()
             if writer.start() { running = true; return true }
             invalidateConnection()
@@ -182,65 +201,72 @@ final class VirtualMicrophone {
     }
 
     private func prepareBuffer() {
-        lock.lock()
-        readIndex = 0; writeIndex = 0; count = 0
-        rendered = 0; fed = 0; dropped = 0; peakBuffered = 0
-        draining = false; enabled = true
-        dcX = 0; dcY = 0; previousSample = 0
-        lock.unlock()
+        producerLock.lock()
+        dcX = 0; dcY = 0; historyPrev = 0; previousSample = 0
+        scratch.removeAll(keepingCapacity: true)
+        RVAudioRingPrepare(ring)
+        producerLock.unlock()
     }
 
     func feed(_ samples: [Int16], rate: Int) {
-        guard rate == 16000 || rate == 8000 else { return }
-        lock.lock()
-        defer { lock.unlock() }
-        guard enabled else { return }
+        guard rate == 16000 || rate == 8000, !samples.isEmpty else { return }
+        producerLock.lock()
+        defer { producerLock.unlock() }
         let ratio = 48000 / rate
+        scratch.removeAll(keepingCapacity: true)
         for sample in samples {
             let x = Float(sample) / 32768
             let filtered = x - dcX + 0.995 * dcY
             dcX = x; dcY = filtered
-            let value = max(-0.98, min(0.98, filtered * 2))
+            let value = 0.98 * tanhf((filtered * 2) / 0.98)
+            let p0 = previousSample
+            let p1 = value
+            let m0 = 0.5 * (p1 - historyPrev)
+            let m1 = p1 - p0
             for step in 1...ratio {
-                let point = previousSample + (value - previousSample) * Float(step) / Float(ratio)
-                if count == ring.count { readIndex = (readIndex + 1) % ring.count; count -= 1; dropped += 1 }
-                ring[writeIndex] = point
-                writeIndex = (writeIndex + 1) % ring.count
-                count += 1; fed += 1
+                let t = Float(step) / Float(ratio)
+                let t2 = t * t
+                let t3 = t2 * t
+                let cubic = (2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * m0 + (-2 * t3 + 3 * t2) * p1 + (t3 - t2) * m1
+                scratch.append(max(-0.98, min(0.98, cubic)))
+                if scratch.count >= 1536 {
+                    scratch.withUnsafeBufferPointer { buffer in
+                        if let base = buffer.baseAddress { RVAudioRingWrite(ring, base, UInt32(buffer.count)) }
+                    }
+                    scratch.removeAll(keepingCapacity: true)
+                }
             }
-            previousSample = value
+            historyPrev = p0
+            previousSample = p1
         }
-        peakBuffered = max(peakBuffered, count)
+        if !scratch.isEmpty {
+            scratch.withUnsafeBufferPointer { buffer in
+                if let base = buffer.baseAddress { RVAudioRingWrite(ring, base, UInt32(buffer.count)) }
+            }
+            scratch.removeAll(keepingCapacity: true)
+        }
     }
 
-    func startDraining() { lock.lock(); draining = true; lock.unlock() }
-    var pendingFrames: Int { lock.lock(); defer { lock.unlock() }; return count }
-    var renderedFrames: Int { lock.lock(); defer { lock.unlock() }; return rendered }
-    var fedFrames: Int { lock.lock(); defer { lock.unlock() }; return fed }
+    func startDraining() { RVAudioRingStartDraining(ring) }
+    var pendingFrames: Int { Int(RVAudioRingPendingFrames(ring)) }
+    var renderedFrames: Int { Int(RVAudioRingRenderedFrames(ring)) }
+    var fedFrames: Int { Int(RVAudioRingFedFrames(ring)) }
     var bufferDiagnostics: [String: Int] {
-        lock.lock(); defer { lock.unlock() }
-        return ["peakBufferedFrames": peakBuffered, "droppedFrames": dropped]
+        ["peakBufferedFrames": Int(RVAudioRingPeakBuffered(ring)), "droppedFrames": Int(RVAudioRingDroppedFrames(ring))]
     }
 
     private func render(_ output: UnsafeMutablePointer<AudioBufferList>) {
         let buffers = UnsafeMutableAudioBufferListPointer(output)
         for buffer in buffers { if let p = buffer.mData { memset(p, 0, Int(buffer.mDataByteSize)) } }
-        guard lock.try() else { return }
-        defer { lock.unlock() }
-        guard enabled, draining, let first = buffers.first, let data = first.mData else { return }
+        guard let first = buffers.first, let data = first.mData else { return }
         let frames = Int(first.mDataByteSize) / MemoryLayout<Float>.size
+        guard frames > 0 else { return }
         let values = data.assumingMemoryBound(to: Float.self)
-        let take = min(frames, count)
-        for i in 0..<take {
-            values[i] = ring[readIndex]
-            readIndex = (readIndex + 1) % ring.count
-        }
-        count -= take
-        rendered += take
+        _ = RVAudioRingRender(ring, values, UInt32(frames))
     }
 
     func end() {
-        lock.lock(); enabled = false; draining = false; count = 0; lock.unlock()
+        RVAudioRingStop(ring)
         if running { writer?.stop() }
         running = false
         recoverInput()

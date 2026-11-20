@@ -30,11 +30,13 @@ private final class FakeHardware: MicrophoneHardware {
     var writers: [FakeWriter] = []
     var observers: [UUID: (Bool) -> Void] = [:]
     var registrations = 0
+    var driverBuild: Int? = VirtualMicrophone.expectedDriverBuild
     func microphone() -> AudioDeviceID? { microphoneID }
     func alive(_ device: AudioDeviceID) -> Bool { device == microphoneID && ids[device] == "RemoteVibeMic_UID" }
     func defaultInput() -> AudioDeviceID { current }
     func uid(_ device: AudioDeviceID) -> String? { ids[device] }
     func device(uid: String) -> AudioDeviceID? { ids.first { $0.value == uid }?.key }
+    func driverBuildVersion() -> Int? { driverBuild }
     func setDefaultInput(_ device: AudioDeviceID) -> Bool {
         guard routeAllowed, ids[device] != nil else { return false }
         current = device; return true
@@ -57,10 +59,12 @@ enum AudioPipelineTest {
         let prefs = UserDefaults(suiteName: suite)!
         defer { prefs.removePersistentDomain(forName: suite) }
         buffers(prefs)
+        softLimiterAndLockFreeConcurrency(prefs)
+        fixedInputAndDriverVersion(prefs)
         recovery(prefs)
         routes(prefs)
         scheduling()
-        print("PASS: audio writer recovery, bounded retry, listener renewal, route ownership, buffer drain/overflow, menu-mode cleanup and monotonic timing (fake hardware only).")
+        print("PASS: lock-free ring buffer, soft limiter, fixed-input mode, driver version check, writer recovery, route ownership and monotonic timing (fake hardware only).")
     }
 
     private static func buffers(_ prefs: UserDefaults) {
@@ -89,6 +93,62 @@ enum AudioPipelineTest {
         input.stop()
         precondition(input.pendingFrames == 0 && !input.available && hardware.observers.isEmpty)
         precondition(writer.output(16).allSatisfy { $0 == 0 })
+    }
+
+    private static func softLimiterAndLockFreeConcurrency(_ prefs: UserDefaults) {
+        let hardware = FakeHardware()
+        let mic = VirtualMicrophone(hardware: hardware, preferences: prefs)
+        precondition(mic.begin())
+        let loud = (0..<320).map { $0 % 2 == 0 ? Int16.max : Int16.min }
+        mic.feed(loud, rate: 16000)
+        mic.startDraining()
+        let writer = hardware.writers[0]
+        let clipped = writer.output(960)
+        precondition(clipped.count == 960 && clipped.allSatisfy { $0.isFinite && abs($0) <= 0.98 })
+        precondition(clipped.contains { abs($0) > 0.7 })
+        mic.end()
+
+        precondition(mic.begin())
+        mic.startDraining()
+        let activeWriter = hardware.writers.last!
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let chunk = [Int16](repeating: 4096, count: 160)
+            for _ in 0..<200 {
+                mic.feed(chunk, rate: 16000)
+            }
+            done.signal()
+        }
+        var consumed = 0
+        while done.wait(timeout: .now()) == .timedOut || mic.pendingFrames > 0 {
+            let block = activeWriter.output(256)
+            precondition(block.allSatisfy { $0.isFinite && abs($0) <= 0.98 })
+            _ = mic.bufferDiagnostics
+            consumed += 1
+            if consumed > 50_000 { break }
+        }
+        precondition(mic.fedFrames == 200 * 160 * 3)
+        precondition(mic.renderedFrames + (mic.bufferDiagnostics["droppedFrames"] ?? 0) == mic.fedFrames)
+        mic.stop()
+    }
+
+    private static func fixedInputAndDriverVersion(_ prefs: UserDefaults) {
+        let hardware = FakeHardware()
+        hardware.driverBuild = 0
+        let mic = VirtualMicrophone(hardware: hardware, preferences: prefs)
+        precondition(mic.connect() && mic.driverNeedsUpdate)
+        hardware.driverBuild = VirtualMicrophone.expectedDriverBuild
+        precondition(!mic.driverNeedsUpdate)
+
+        precondition(mic.begin(switchDefaultInput: false))
+        precondition(hardware.current == 1 && prefs.string(forKey: "restoreInputUID") == nil)
+        mic.feed([2000, -2000], rate: 16000)
+        mic.startDraining()
+        let out = hardware.writers.last!.output(6)
+        precondition(out.contains { $0 != 0 } && mic.pendingFrames == 0)
+        mic.end()
+        precondition(hardware.current == 1 && prefs.string(forKey: "restoreInputUID") == nil)
+        mic.stop()
     }
 
     private static func recovery(_ prefs: UserDefaults) {

@@ -87,6 +87,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     private var selected: UInt8 = 8
     private var displayedProfile: RemoteProfile
     private var draftCache: [RemoteProfile: (normal: KeyMapping.Bindings, mouse: KeyMapping.Bindings)] = [:]
+    private var preferredPresetIndices: [String: Int] = [:]
     private let modePicker = NSSegmentedControl()
     private let diagram = RemoteDiagram(frame: NSRect(x: 0, y: 0, width: 305, height: 540))
     private let nameLabel = NSTextField(labelWithString: L("静音"))
@@ -325,6 +326,9 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     private var selectedButton: MappedButton? { mapping.buttons.first { $0.code == selected } }
     private var selectedTrigger: ButtonTrigger { ButtonTrigger.allCases[triggerPicker.selectedSegment] }
     private var selectedPresetIndex: Int { actionPicker.selectedItem?.tag ?? 0 }
+    private var selectionSlotKey: String {
+        "\(displayedProfile.rawValue).\(editingMouse ? "m" : "n").\(selected).\(selectedTrigger.rawValue)"
+    }
     private func presetItem(_ index: Int) -> NSMenuItem? {
         actionPicker.itemArray.first { !$0.isSeparatorItem && !$0.isSectionHeader && $0.tag == index }
     }
@@ -376,7 +380,8 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         keyPicker.item(at: 0)?.isEnabled = selectedTrigger != .doubleClick
         let value = selectedBinding
         let unset = selectedTrigger != .singleClick && selectedConfiguration[selectedTrigger] == nil
-        actionPicker.select(presetItem(unset ? 0 : ActionCatalog.index(for: value)))
+        let targetIndex = ActionCatalog.index(for: value, preferredIndex: preferredPresetIndices[selectionSlotKey])
+        actionPicker.select(presetItem(unset ? 0 : targetIndex))
         textEditor.string = value.text ?? ""
         targetField.stringValue = value.kind == .openApp ? value.appPath ?? "" : value.url ?? ""
         actionPicker.isEnabled = !voice && !reservedToggle; resetButton.isEnabled = !voice && !reservedToggle
@@ -469,8 +474,14 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     @objc private func actionChanged() {
         guard selectedButton != nil else { return }
         if selectedTrigger != .singleClick && selectedPresetIndex == 0 {
+            preferredPresetIndices.removeValue(forKey: selectionSlotKey)
             setSelectedBinding(nil)
         } else if let value = presets[selectedPresetIndex].binding {
+            if presets[selectedPresetIndex].isAlias {
+                preferredPresetIndices[selectionSlotKey] = selectedPresetIndex
+            } else {
+                preferredPresetIndices.removeValue(forKey: selectionSlotKey)
+            }
             var next = value
             if next.kind == .text { next.text = selectedBinding.text ?? "" }
             if next.kind == .openApp { next.appPath = selectedBinding.appPath }
@@ -479,6 +490,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
             textEditor.string = next.text ?? ""
             targetField.stringValue = next.kind == .openApp ? next.appPath ?? "" : next.url ?? ""
         } else {
+            preferredPresetIndices.removeValue(forKey: selectionSlotKey)
             let current = selectedBinding
             if current.kind == .key {
                 keyPicker.selectItem(at: MappingKey.all.firstIndex { $0.usage == current.usage } ?? 0)
@@ -546,6 +558,8 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     // Import/restore changes only the drafts; Save and Apply remains explicit.
     func importConfiguration(_ data: Data) throws {
         let archive = try MappingArchive.read(data, for: displayedProfile)
+        let prefix = "\(displayedProfile.rawValue)."
+        preferredPresetIndices = preferredPresetIndices.filter { !$0.key.hasPrefix(prefix) }
         normalDrafts = archive.normal; mouseDrafts = archive.mouse
         displaySelection()
     }
@@ -589,6 +603,8 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
 
     func restoreConfiguration() {
         guard let backup = mapping.configurationBackup() else { liveStatus.stringValue = L("暂无可用的配置备份"); return }
+        let prefix = "\(displayedProfile.rawValue)."
+        preferredPresetIndices = preferredPresetIndices.filter { !$0.key.hasPrefix(prefix) }
         normalDrafts = backup.normal; mouseDrafts = backup.mouse
         displaySelection()
         liveStatus.stringValue = L("配置已载入草稿，请检查后点击“保存并生效”")
@@ -597,6 +613,8 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
 
     @objc private func resetKey() {
         guard selectedButton != nil, !reservedToggle else { return }
+        let prefix = "\(displayedProfile.rawValue).\(editingMouse ? "m" : "n").\(selected)."
+        preferredPresetIndices = preferredPresetIndices.filter { !$0.key.hasPrefix(prefix) }
         drafts.removeValue(forKey: String(selected))
         displaySelection()
     }

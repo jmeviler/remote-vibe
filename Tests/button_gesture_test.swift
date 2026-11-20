@@ -150,8 +150,9 @@ enum ButtonGestureTest {
         try MappingStoreTests.run()
         try configurations()
         try actions()
+        voiceTriggerAndTimings()
         reports()
-        print("PASS: gestures for all 26 buttons, v1 migration, Fn, HID reports and \(ActionCatalog.presets.count) action choices (events constructed, never posted).")
+        print("PASS: gestures for all 26 buttons, v1 migration, Fn, voice triggers/timings, HID reports and \(ActionCatalog.presets.count) action choices (events constructed, never posted).")
     }
 
     private static func configurations() throws {
@@ -264,5 +265,85 @@ enum ButtonGestureTest {
         let decoded = try JSONDecoder().decode(ButtonBinding.self, from: JSONEncoder().encode(targets))
         precondition(decoded == targets && decoded.validationMessage == nil)
         precondition(MappingKey.all.filter { $0.name.hasPrefix("F") && Int($0.name.dropFirst()) != nil }.count == 20)
+        // Canonical vs alias lookup for Shift + Left.
+        let shiftLeft = ButtonAction(kind: .key, usage: 0x50, modifiers: CGEventFlags.maskShift.rawValue)
+        let canonicalIndex = ActionCatalog.index(for: shiftLeft)
+        precondition(!ActionCatalog.presets[canonicalIndex].isAlias)
+        precondition(ActionCatalog.displayName(shiftLeft) == L("向左选择 · ⇧←"))
+        let aliasIndex = ActionCatalog.presets.firstIndex { $0.isAlias && $0.binding == shiftLeft }!
+        precondition(ActionCatalog.index(for: shiftLeft, preferredIndex: aliasIndex) == aliasIndex)
+    }
+
+    private static func voiceTriggerAndTimings() {
+        let suite = "RemoteVibe.VoiceTriggerTests.\(UUID().uuidString)"
+        let prefs = UserDefaults(suiteName: suite)!
+        defer { prefs.removePersistentDomain(forName: suite) }
+        let settings = VoiceInputSettings(preferences: prefs)
+        precondition(settings.switchDefaultInput && !settings.fastTurnaround && settings.trigger == .holdFn)
+        precondition(settings.timing == VoiceTimingProfile(preTriggerDelay: 0.20, preDrainDelay: 0.55, postDrainDelay: 0.20, postReleaseDelay: 0.80))
+
+        settings.switchDefaultInput = false
+        precondition(settings.timing.preTriggerDelay < 0.05 && settings.timing.postReleaseDelay <= 0.10)
+        settings.fastTurnaround = true
+        precondition(settings.timing.preDrainDelay <= 0.25)
+
+        settings.trigger = .custom(mode: .hold, usage: MappingKey.fnUsage, modifiers: 0)
+        precondition(settings.trigger == .holdFn)
+        settings.trigger = .custom(mode: .tapToggle, usage: 0x2C, modifiers: CGEventFlags.maskAlternate.rawValue)
+        precondition(settings.trigger == .tapOptionSpace)
+        settings.trigger = .custom(mode: .hold, usage: 0x06, modifiers: CGEventFlags.maskCommand.rawValue)
+        precondition(settings.trigger.isCustom && settings.trigger.requiresAccessibility)
+        prefs.set(Data("corrupt".utf8), forKey: VoiceInputSettings.triggerKey)
+        precondition(settings.trigger == .holdFn)
+        settings.trigger = .none
+        precondition(!settings.trigger.requiresAccessibility && settings.timing.preTriggerDelay == 0)
+
+        var trusted = true
+        var heldFlags: CGEventFlags = []
+        var posted: [(CGEventType, Int64, CGEventFlags)] = []
+        let controller = VoiceTriggerController(
+            isTrusted: { trusted },
+            flagsState: { heldFlags },
+            post: { event in
+                precondition(event.getIntegerValueField(.eventSourceUserData) == 0x524D5642)
+                posted.append((event.type, event.getIntegerValueField(.keyboardEventKeycode), event.flags))
+                if event.type == .flagsChanged { heldFlags = event.flags }
+            }
+        )
+
+        // Hold Fn (default WeChat path)
+        precondition(controller.activate(.holdFn) && controller.active && controller.fnHeld)
+        precondition(posted.count == 1 && posted[0].0 == .flagsChanged && posted[0].1 == 63 && posted[0].2.contains(.maskSecondaryFn))
+        controller.deactivate()
+        precondition(!controller.active && !controller.fnHeld && posted.count == 2 && !posted[1].2.contains(.maskSecondaryFn))
+
+        // Hold Right Option
+        posted.removeAll(); heldFlags = []
+        precondition(controller.activate(.holdRightOption) && controller.active && !controller.fnHeld)
+        precondition(posted.count == 1 && posted[0].1 == 61 && posted[0].2.contains(.maskAlternate))
+        controller.deactivate()
+        precondition(!controller.active && posted.count == 2 && !posted[1].2.contains(.maskAlternate))
+
+        // Tap-toggle Option + Space (fires balanced tap on start AND balanced tap on end/abort)
+        posted.removeAll(); heldFlags = []
+        precondition(controller.activate(.tapOptionSpace) && controller.active)
+        let firstTapCount = posted.count
+        precondition(firstTapCount == 4 && posted.filter { $0.0 == .keyDown }.count == 1 && posted.filter { $0.0 == .keyUp }.count == 1)
+        controller.deactivate()
+        precondition(!controller.active && posted.count == 8 && posted.last!.2.isEmpty)
+
+        // Custom hold shortcut
+        posted.removeAll(); heldFlags = []
+        precondition(controller.activate(.custom(mode: .hold, usage: 0x06, modifiers: CGEventFlags.maskCommand.rawValue)))
+        precondition(posted.map(\.0) == [.flagsChanged, .keyDown])
+        controller.deactivate()
+        precondition(posted.map(\.0) == [.flagsChanged, .keyDown, .keyUp, .flagsChanged] && posted.last!.2.isEmpty)
+
+        // Audio-only mode works even without Accessibility trust and posts nothing
+        posted.removeAll(); trusted = false
+        precondition(!controller.activate(.holdFn))
+        precondition(controller.activate(.none) && controller.active && posted.isEmpty)
+        controller.deactivate()
+        precondition(!controller.active && posted.isEmpty)
     }
 }

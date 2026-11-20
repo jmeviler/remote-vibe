@@ -1,6 +1,7 @@
 /recordings/
 /research/
 /build/
+/mac-app/
 /.codex/
 __pycache__/
 .DS_Store

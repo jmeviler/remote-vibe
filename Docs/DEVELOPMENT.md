@@ -121,3 +121,10 @@ Codex CLI 使用已有键盘事件路径，新增数字键和 Ctrl+C/G/O/R 预�
 `MousePointer.swift` 使用一个仅在方向键按住期间存在的 60 Hz 定时器，根据单调时间加速并限制迟到回调的移动距离。组合方向归一化，相反方向抵消；指针按 Quartz 显示器坐标限制在可用屏幕上。左右点击先构造完整按下 / 抬起事件，再成对投递，连续左击按系统双击间隔处理。没有增加空闲轮询、驱动或后台服务。
 
 `zsh Tests/test-button-gestures.sh` 同时运行鼠标状态、独立配置、事件构造、双击时序、移动加速、斜向移动、多屏边界和停止回归；注入时钟、屏幕与事件接收器，不向系统投递鼠标事件。中英文 UI 检查覆盖页签草稿、切换键保留、默认点击、重置及窄窗口宽度。自动验证不能确认真实蓝牙报告、目标应用点击行为或移动手感；实机操作仍需确认。
+
+## 语音输入解耦、无锁音频与工程维护优化
+
+- **语音输入设置（菜单栏「语音输入设置」）**：默认保持按住 `Fn` 和说话期间切换系统默认输入。支持切换为「按住右 Option」、「点按 Option + Space 开始/结束」、「仅送音（不发快捷键）」或自定义保持/点按快捷键，兼容 macOS 听写、豆包及 Whisper 类工具；目标软件已固定选择 `Chromecast Mic` 时可关闭「说话时切换系统默认麦克风」，并可按需启用「快速连续说话」缩短首尾等待。
+- **无锁环形缓冲与软限幅重采样**：`Sources/Audio/AudioRingBuffer.h` 提供单生产者单消费者无锁环形缓冲，CoreAudio 实时渲染线程无锁读取；`VirtualMicrophone` 采用因果三次 Hermite 上采样与 `tanhf` 软限幅，避免大音量硬削波，同时检查已安装驱动的 `CFBundleVersion`。
+- **蓝牙识别、自启与异步状态**：Google 模式支持 `Google TV` 系列广播名及系统改名后的 ATVV 外设回退识别（通过 `0x180A` 排除小米型号）；菜单栏新增基于 `SMAppService.mainApp` 的「登录时自动打开」；`StatusWriter` 在后台队列合并写入 `status.json` 并复用 `ISO8601DateFormatter`。
+- **统一源码清单与严格编译**：`Scripts/swift-sources.sh` 集中维护模块源码列表及 `-warnings-as-errors` 编译参数，构建与全部测试脚本共用，`Tests/test-app-support.sh` 自动核对源码清单覆盖率。

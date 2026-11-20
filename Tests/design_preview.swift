@@ -120,6 +120,9 @@ enum DesignPreview {
             precondition(window.makeFirstResponder(voice), "Remote buttons must accept keyboard focus")
             try capture(shell, name: profile.rawValue + "-voice-narrow", directory: directory)
             resize(1080)
+            shell.appearance = NSAppearance(named: .darkAqua)
+            try capture(shell, name: profile.rawValue + "-voice-dark", directory: directory)
+            shell.appearance = NSAppearance(named: .aqua)
             if profile == .chromecast {
                 view.isHidden = true; combo.isHidden = false; tabs.selectedSegment = 1
                 try capture(shell, name: "combo", directory: directory)

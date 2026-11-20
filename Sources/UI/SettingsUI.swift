@@ -1,18 +1,60 @@
 import AppKit
 
-private final class SettingsButtonCell: NSButtonCell {
+enum ButtonRole {
+    case primary
+    case secondary
+    case destructive
+}
+
+final class SettingsButtonCell: NSButtonCell {
+    var role: ButtonRole = .primary
+
     override func drawTitle(_ title: NSAttributedString, withFrame frame: NSRect, in controlView: NSView) -> NSRect {
         // Bordered buttons ignore contentTintColor, and AppKit replaces disabled title colors.
         // Keep the native bezel, sizing and interaction; draw only the title with readable colors.
         let text = NSMutableAttributedString(attributedString: title)
-        // Native tinted bezels become neutral when their window is inactive.
         let active = NSApp.isActive && controlView.window?.isKeyWindow == true
-        let color = active ? (isEnabled ? NSColor.white : SettingsTheme.paper) :
-            (isEnabled ? SettingsTheme.ink : SettingsTheme.secondary)
-        text.addAttribute(.foregroundColor, value: color,
-                          range: NSRange(location: 0, length: text.length))
+        let isDark = controlView.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let color: NSColor
+        switch role {
+        case .primary, .destructive:
+            if active {
+                color = isEnabled ? .white : NSColor.white.withAlphaComponent(0.55)
+            } else {
+                color = isEnabled ? SettingsTheme.ink : SettingsTheme.secondary.withAlphaComponent(0.6)
+            }
+        case .secondary:
+            if isEnabled {
+                color = isDark ? SettingsTheme.color(0xECF1EC) : SettingsTheme.color(0x202923)
+            } else {
+                color = SettingsTheme.secondary.withAlphaComponent(0.55)
+            }
+        }
+        text.addAttribute(.foregroundColor, value: color, range: NSRange(location: 0, length: text.length))
         text.draw(in: frame)
         return frame
+    }
+}
+
+final class StyledButton: NSButton {
+    var role: ButtonRole = .primary {
+        didSet {
+            guard oldValue != role else { return }
+            applyRole()
+        }
+    }
+
+    func applyRole() {
+        (cell as? SettingsButtonCell)?.role = role
+        switch role {
+        case .primary:
+            bezelColor = SettingsTheme.forest
+        case .destructive:
+            bezelColor = SettingsTheme.destructiveFill
+        case .secondary:
+            bezelColor = nil
+        }
+        needsDisplay = true
     }
 }
 
@@ -21,15 +63,27 @@ enum SettingsTheme {
         NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255, green: CGFloat((hex >> 8) & 255) / 255,
                 blue: CGFloat(hex & 255) / 255, alpha: 1)
     }
-    static let canvas = color(0xF2F3EE)
-    static let paper = color(0xFCFCF9)
-    static let ink = color(0x202923)
-    static let secondary = color(0x667169)
-    static let line = color(0xDFE3DA)
-    static let forest = color(0x344936)
-    static let stage = color(0x202B25)
-    static let error = color(0xA3422C)
-    static let destructiveFill = color(0x843727)
+
+    static func adaptive(light: UInt32, dark: UInt32) -> NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return color(isDark ? dark : light)
+        }
+    }
+
+    static let canvas = adaptive(light: 0xF2F3EE, dark: 0x131815)
+    static let paper = adaptive(light: 0xFCFCF9, dark: 0x1C231F)
+    static let subtleFill = adaptive(light: 0xE8ECE4, dark: 0x252F29)
+    static let ink = adaptive(light: 0x202923, dark: 0xECF1EC)
+    static let secondary = adaptive(light: 0x626E65, dark: 0x99A89C)
+    static let line = adaptive(light: 0xDFE3DA, dark: 0x2E3A32)
+    static let forest = adaptive(light: 0x344936, dark: 0x456949)
+    static let stage = adaptive(light: 0x202B25, dark: 0x17201B)
+    static let accentDot = adaptive(light: 0x3B7A44, dark: 0x69D178)
+    static let warning = adaptive(light: 0xB8621B, dark: 0xF0A04B)
+    static let warningFill = adaptive(light: 0xFDF3E7, dark: 0x2F2418)
+    static let error = adaptive(light: 0xA3422C, dark: 0xEB6F56)
+    static let destructiveFill = adaptive(light: 0x843727, dark: 0x9F4330)
 
     static func label(_ text: String, size: CGFloat = 12, weight: NSFont.Weight = .regular,
                       color: NSColor = secondary) -> NSTextField {
@@ -53,30 +107,41 @@ enum SettingsTheme {
     }
 
     static func button(_ title: String, target: AnyObject? = nil, action: Selector? = nil,
-                       destructive: Bool = false) -> NSButton {
-        let button = NSButton(frame: .zero)
+                       destructive: Bool = false, role: ButtonRole? = nil) -> StyledButton {
+        let resolvedRole = role ?? (destructive ? .destructive : .primary)
+        let button = StyledButton(frame: .zero)
         let cell = SettingsButtonCell(textCell: title)
+        cell.role = resolvedRole
         button.cell = cell
+        button.role = resolvedRole
         button.setButtonType(.momentaryPushIn)
         button.target = target; button.action = action
         button.bezelStyle = .rounded
         button.font = .systemFont(ofSize: 12, weight: .semibold)
-        button.bezelColor = destructive ? destructiveFill : forest
+        button.applyRole()
         return button
     }
 
-    // Cache the fixed app symbols in dark and light variants for their backgrounds.
+    static func secondaryButton(_ title: String, target: AnyObject? = nil, action: Selector? = nil) -> StyledButton {
+        button(title, target: target, action: action, role: .secondary)
+    }
+
+    // Cache fixed app symbols in explicit tint variants so Light and Dark modes stay crisp.
     private static var symbols: [String: NSImage] = [:]
     static func symbol(_ name: String, in rect: NSRect, onDark: Bool = false) {
-        let key = name + (onDark ? "/light" : "/dark")
+        let isDarkAppearance = NSAppearance.currentDrawing().bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let variant = onDark ? "white" : (isDarkAppearance ? "darkInk" : "lightInk")
+        let key = "\(name)/\(variant)"
         if symbols[key] == nil {
-            guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            guard let base = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
                 .withSymbolConfiguration(.init(pointSize: 16, weight: .medium)) else { return }
-            let tinted = NSImage(size: image.size)
-            tinted.lockFocus()
-            image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
-            (onDark ? NSColor.white : ink).setFill(); NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop)
-            tinted.unlockFocus()
+            let tint: NSColor = onDark ? .white : (isDarkAppearance ? color(0xECF1EC) : color(0x202923))
+            let tinted = NSImage(size: base.size, flipped: false) { bounds in
+                base.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
+                tint.setFill()
+                bounds.fill(using: .sourceAtop)
+                return true
+            }
             symbols[key] = tinted
         }
         guard let image = symbols[key] else { return }
@@ -89,14 +154,30 @@ enum SettingsTheme {
 }
 
 class SettingsPanel: NSView {
-    var fill: NSColor = SettingsTheme.paper
-    var border: NSColor? = SettingsTheme.line
-    var radius: CGFloat = 22
+    var fill: NSColor = SettingsTheme.paper { didSet { needsDisplay = true } }
+    var border: NSColor? = SettingsTheme.line { didSet { needsDisplay = true } }
+    var radius: CGFloat = 22 { didSet { needsDisplay = true } }
     override var isFlipped: Bool { true }
     override func draw(_ dirtyRect: NSRect) {
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: radius, yRadius: radius)
         fill.setFill(); path.fill()
         if let border { border.setStroke(); path.lineWidth = 1; path.stroke() }
+    }
+}
+
+final class StatusBadgePill: NSView {
+    var isReady = true { didSet { if oldValue != isReady { needsDisplay = true } } }
+    override var isFlipped: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        let pill = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: bounds.height / 2, yRadius: bounds.height / 2)
+        (isReady ? SettingsTheme.subtleFill : SettingsTheme.warningFill).setFill()
+        pill.fill()
+        (isReady ? SettingsTheme.line : SettingsTheme.warning.withAlphaComponent(0.45)).setStroke()
+        pill.lineWidth = 1
+        pill.stroke()
+        let dotRect = NSRect(x: 11, y: (bounds.height - 7) / 2, width: 7, height: 7)
+        (isReady ? SettingsTheme.accentDot : SettingsTheme.error).setFill()
+        NSBezierPath(ovalIn: dotRect).fill()
     }
 }
 
@@ -134,14 +215,14 @@ final class SettingsScrollView: NSScrollView {
 final class RemoteStage: SettingsPanel {
     override init(frame: NSRect) {
         super.init(frame: frame)
-        fill = SettingsTheme.stage; border = nil; radius = 24
+        fill = SettingsTheme.stage; border = SettingsTheme.color(0x2F3E34); radius = 24
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         NSGraphicsContext.saveGraphicsState()
         NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).addClip()
-        SettingsTheme.color(0x3C4D3F).withAlphaComponent(0.6).setStroke()
+        SettingsTheme.color(0x3C4D3F).withAlphaComponent(0.55).setStroke()
         for radius in stride(from: CGFloat(125), through: 245, by: 40) {
             let ring = NSBezierPath(ovalIn: NSRect(x: bounds.midX - radius, y: bounds.midY - radius, width: radius * 2, height: radius * 2))
             ring.lineWidth = 0.7; ring.stroke()
@@ -158,7 +239,7 @@ final class ActionPreview: SettingsPanel {
     var binding: ButtonAction? { didSet { needsDisplay = true } }
     var voice = false { didSet { needsDisplay = true } }
     override func draw(_ dirtyRect: NSRect) {
-        fill = SettingsTheme.canvas; border = nil; radius = 12
+        fill = SettingsTheme.subtleFill; border = nil; radius = 12
         super.draw(dirtyRect)
         func text(_ value: String, at point: NSPoint, size: CGFloat, color: NSColor, weight: NSFont.Weight = .medium) {
             (value as NSString).draw(at: point, withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: weight), .foregroundColor: color])
@@ -180,7 +261,7 @@ final class ActionPreview: SettingsPanel {
                 (key as NSString).draw(at: NSPoint(x: x + (width - size.width) / 2, y: 16 + (49 - size.height) / 2), withAttributes: attrs)
                 x += width + 8
             }
-            text(binding.isFn ? L("仅模拟 Fn · 使用目标软件选择的麦克风") : L("发送到当前应用"), at: NSPoint(x: 18, y: 85), size: 11, color: SettingsTheme.secondary)
+            text(binding.isFn ? L("仅模拟 Fn · 使用目标软件选择的麦克风") : L("发送到当前应用"), at: NSPoint(x: 18, y: 82), size: 11, color: SettingsTheme.secondary)
         } else {
             let symbol: String
             let title: String
@@ -204,7 +285,7 @@ final class ActionPreview: SettingsPanel {
             SettingsTheme.forest.setFill(); disc.fill()
             SettingsTheme.symbol(symbol, in: NSRect(x: 33, y: 42, width: 23, height: 23), onDark: true)
             text(title, at: NSPoint(x: 88, y: 32), size: 17, color: SettingsTheme.ink)
-            text(detail, at: NSPoint(x: 88, y: 66), size: 11, color: SettingsTheme.secondary)
+            text(detail, at: NSPoint(x: 88, y: 64), size: 11, color: SettingsTheme.secondary)
         }
     }
 }
@@ -212,22 +293,23 @@ final class ActionPreview: SettingsPanel {
 // Shared shell for the real application and side-effect-free visual previews.
 final class SettingsView: SettingsPage {
     static let size = NSSize(width: 1080, height: 812)
+    let readinessPill = StatusBadgePill()
     override var isFlipped: Bool { true }
     init(mapping: NSView, unlock: NSView, remote: NSPopUpButton, discovery: NSButton, pages: NSSegmentedControl,
          connection: NSTextField, audio: NSTextField, permission: NSTextField, permissionsButton: NSButton, message: NSTextField,
          readiness: NSTextField, wechatButton: NSButton) {
         super.init(frame: NSRect(origin: .zero, size: Self.size))
-        appearance = NSAppearance(named: .aqua)
         func place(_ view: NSView, _ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) {
             view.frame = NSRect(x: x, y: y, width: width, height: height); addSubview(view)
         }
-        place(SettingsTheme.eyebrow("REMOTE VIBE  /  DESKTOP CONTROL"), 30, 22, 380, 16)
-        place(SettingsTheme.label(L("把习惯，放进按键。"), size: 29, weight: .semibold, color: SettingsTheme.ink), 28, 49, 460, 42)
+        place(SettingsTheme.eyebrow("REMOTE VIBE  /  DESKTOP CONTROL"), 30, 20, 380, 16)
+        place(SettingsTheme.label(L("把习惯，放进按键。"), size: 28, weight: .semibold, color: SettingsTheme.ink), 28, 44, 460, 40)
+        place(readinessPill, 28, 92, 620, 26)
         readiness.font = .systemFont(ofSize: 12, weight: .medium)
         readiness.maximumNumberOfLines = 1
         readiness.lineBreakMode = .byTruncatingTail
         readiness.setAccessibilityLabel(L("使用就绪状态"))
-        place(readiness, 30, 96, 750, 19)
+        place(readiness, 52, 96, 584, 18)
         remote.font = .systemFont(ofSize: 12, weight: .medium)
         remote.setAccessibilityLabel(L("当前遥控器"))
         place(remote, 737, 24, 168, 32)
@@ -240,20 +322,22 @@ final class SettingsView: SettingsPage {
         place(mapping, 28, 131, 1024, 574)
         place(unlock, 28, 131, 1024, 574)
         let footer = SettingsPanel(frame: NSRect(x: 28, y: 721, width: 1024, height: 73))
-        footer.radius = 15; addSubview(footer)
+        footer.radius = 16; addSubview(footer)
         for field in [connection, audio, permission, message] {
             field.font = .systemFont(ofSize: 11)
             field.textColor = SettingsTheme.secondary
-            field.maximumNumberOfLines = 2
+            field.maximumNumberOfLines = 1
+            field.lineBreakMode = .byTruncatingTail
         }
         connection.textColor = SettingsTheme.ink
-        connection.font = .systemFont(ofSize: 11, weight: .medium)
-        place(connection, 46, 733, 306, 31)
-        place(audio, 363, 733, 269, 31)
-        place(permission, 655, 733, 253, 31)
-        place(permissionsButton, 920, 731, 115, 30)
-        place(message, 46, 766, 806, 19)
-        place(wechatButton, 876, 761, 159, 29)
+        connection.font = .systemFont(ofSize: 11, weight: .semibold)
+        (wechatButton as? StyledButton)?.role = .secondary
+        place(connection, 46, 735, 224, 18)
+        place(audio, 280, 735, 212, 18)
+        place(permission, 502, 735, 240, 18)
+        place(message, 46, 761, 696, 18)
+        place(permissionsButton, 754, 740, 132, 34)
+        place(wechatButton, 896, 740, 140, 34)
         captureHorizontalLayout()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

@@ -294,6 +294,12 @@ final class KeyMapping {
     private(set) var capturedButtons = Set<UInt8>()
     private var pendingCapture: Set<UInt8>?
     var onCapturedPress: ((UInt8) -> Void)?
+    var inspectingButtons = false {
+        didSet {
+            if inspectingButtons != oldValue { refresh() }
+        }
+    }
+    var onInspectPress: ((UInt8) -> Bool)?
     var onInputReset: (() -> Void)?
     var onDeviceChange: (() -> Void)?
     var captureReady: Bool { !capturedButtons.isEmpty && connected && listenerOK && capturedButtons.isSubset(of: activeShortcuts) }
@@ -441,8 +447,9 @@ final class KeyMapping {
         if disconnected { suspendActions() }
         connected = !services.isEmpty
         if mouseMode.active && (!listeningAllowed || !AXIsProcessTrusted()) { resetMouseMode() }
-        let needsListener = !capturedButtons.isEmpty || buttons.contains { activeBinding($0).usesListener }
-        if needsListener && listeningAllowed && AXIsProcessTrusted() {
+        let hasCustomActions = !capturedButtons.isEmpty || buttons.contains { activeBinding($0).usesListener }
+        let needsListener = inspectingButtons || hasCustomActions
+        if needsListener && listeningAllowed && (AXIsProcessTrusted() || inspectingButtons) {
             if manager == nil { startListener() }
         } else { stopListener() }
         listenerOK = manager != nil && listeningAllowed && AXIsProcessTrusted()
@@ -496,7 +503,7 @@ final class KeyMapping {
         snapshots = snapshots.filter { present.contains($0.key) }
         status = !connected ? L("设置已保存 · 等待遥控器连接") : !applied ? L("按键设置未能生效，请检查权限") :
             needsApply ? L("按键设置被其他程序更改 · 保存可重新应用") :
-            needsListener && !listenerOK ? L("自定义动作需要输入监控及辅助功能权限") :
+            hasCustomActions && !listenerOK ? L("自定义动作需要输入监控及辅助功能权限") :
             mouseMode.active ? L("鼠标模式已开启 · 再按切换键退出") : L("按键已生效 · 重连后自动恢复")
         if connected && applied && !needsApply && (!needsListener || listenerOK),
            let feedback = actionFeedback, feedback.until > Date() { status = feedback.text }
@@ -571,7 +578,7 @@ final class KeyMapping {
             return
         }
         // An immediate toggle takes priority; gesture bindings must still wait for recognition.
-        if capturedButtons.isEmpty, pendingCapture == nil, canPerform(),
+        if !inspectingButtons, capturedButtons.isEmpty, pendingCapture == nil, canPerform(),
            let toggle = buttons.first(where: { added.contains($0.code) && activeShortcuts.contains($0.code) && activeBinding($0).immediateMouseToggle }) {
             perform(activeBinding(toggle).singleClick, button: toggle.code)
             return
@@ -580,6 +587,9 @@ final class KeyMapping {
             if mouseMode.pending != nil { break }
             if capturedButtons.contains(code) {
                 if captureReady { onCapturedPress?(code) }
+                continue
+            }
+            if inspectingButtons, onInspectPress?(code) == true {
                 continue
             }
             guard let button = buttons.first(where: { $0.code == code }) else { continue }

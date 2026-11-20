@@ -295,7 +295,7 @@ enum ButtonGestureTest {
         precondition(settings.trigger.isCustom && settings.trigger.requiresAccessibility)
         prefs.set(Data("corrupt".utf8), forKey: VoiceInputSettings.triggerKey)
         precondition(settings.trigger == .holdFn)
-        settings.trigger = .none
+        settings.trigger = .audioOnly
         precondition(!settings.trigger.requiresAccessibility && settings.timing.preTriggerDelay == 0)
 
         var trusted = true
@@ -342,7 +342,7 @@ enum ButtonGestureTest {
         // Audio-only mode works even without Accessibility trust and posts nothing
         posted.removeAll(); trusted = false
         precondition(!controller.activate(.holdFn))
-        precondition(controller.activate(.none) && controller.active && posted.isEmpty)
+        precondition(controller.activate(.audioOnly) && controller.active && posted.isEmpty)
         controller.deactivate()
         precondition(!controller.active && posted.isEmpty)
     }

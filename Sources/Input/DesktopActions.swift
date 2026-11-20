@@ -205,7 +205,7 @@ final class DesktopActions {
         }
         // Raising alone does not select a background application's intended window.
         _ = AXUIElementSetAttributeValue(target.element, kAXMainAttribute as CFString, kCFBooleanTrue)
-        guard app.activate(options: []) else {
+        guard app.activate() else {
             busy = false; completion(L("窗口未能激活，请重试")); return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [self] in

@@ -17,7 +17,7 @@ enum VoiceTrigger: Equatable, Codable {
     case holdFn
     case holdRightOption
     case tapOptionSpace
-    case none
+    case audioOnly
     case custom(mode: VoiceTriggerMode, usage: UInt64, modifiers: UInt64)
 
     private enum CodingKeys: String, CodingKey {
@@ -31,7 +31,7 @@ enum VoiceTrigger: Equatable, Codable {
         case "holdFn": self = .holdFn
         case "holdRightOption": self = .holdRightOption
         case "tapOptionSpace": self = .tapOptionSpace
-        case "none": self = .none
+        case "audioOnly", "none": self = .audioOnly
         case "custom":
             let mode = try container.decode(VoiceTriggerMode.self, forKey: .mode)
             let usage = try container.decode(UInt64.self, forKey: .usage)
@@ -55,8 +55,8 @@ enum VoiceTrigger: Equatable, Codable {
             try container.encode("holdRightOption", forKey: .kind)
         case .tapOptionSpace:
             try container.encode("tapOptionSpace", forKey: .kind)
-        case .none:
-            try container.encode("none", forKey: .kind)
+        case .audioOnly:
+            try container.encode("audioOnly", forKey: .kind)
         case let .custom(mode, usage, modifiers):
             try container.encode("custom", forKey: .kind)
             try container.encode(mode, forKey: .mode)
@@ -78,13 +78,13 @@ enum VoiceTrigger: Equatable, Codable {
     }
 
     var requiresAccessibility: Bool {
-        if case .none = normalized { return false }
+        if case .audioOnly = normalized { return false }
         return true
     }
 
     var isValid: Bool {
         switch normalized {
-        case .holdFn, .holdRightOption, .tapOptionSpace, .none:
+        case .holdFn, .holdRightOption, .tapOptionSpace, .audioOnly:
             return true
         case let .custom(mode, usage, modifiers):
             let allowed = CGEventFlags([.maskControl, .maskAlternate, .maskShift, .maskCommand, .maskSecondaryFn]).rawValue
@@ -99,7 +99,7 @@ enum VoiceTrigger: Equatable, Codable {
         case .holdFn: return "wechat-hold-fn"
         case .holdRightOption: return "hold-right-option"
         case .tapOptionSpace: return "tap-option-space"
-        case .none: return "audio-only"
+        case .audioOnly: return "audio-only"
         case .custom(.hold, _, _): return "custom-hold"
         case .custom(.tapToggle, _, _): return "custom-tap"
         }
@@ -110,7 +110,7 @@ enum VoiceTrigger: Equatable, Codable {
         case .holdFn: return L("按住 Fn（微信默认）")
         case .holdRightOption: return L("按住右 Option")
         case .tapOptionSpace: return L("点按 Option + Space 开始/结束")
-        case .none: return L("仅送音（不发快捷键）")
+        case .audioOnly: return L("仅送音（不发快捷键）")
         case let .custom(mode, usage, modifiers):
             let shortcut = ButtonAction(kind: .key, usage: usage, modifiers: modifiers).title
             return mode == .hold ? L("自定义按住：%@", shortcut) : L("自定义点按：%@", shortcut)
@@ -125,7 +125,7 @@ struct VoiceTimingProfile: Equatable {
     let postReleaseDelay: TimeInterval
 
     static func resolve(switchDefaultInput: Bool, fastTurnaround: Bool, trigger: VoiceTrigger) -> VoiceTimingProfile {
-        if trigger.normalized == .none {
+        if trigger.normalized == .audioOnly {
             return VoiceTimingProfile(
                 preTriggerDelay: switchDefaultInput ? (fastTurnaround ? 0.05 : 0.10) : 0,
                 preDrainDelay: 0.05,
@@ -195,7 +195,7 @@ final class VoiceInputSettings {
 
 final class VoiceTriggerController {
     private enum ActiveState {
-        case none
+        case audioOnly
         case heldFlag(keyCode: CGKeyCode, flag: CGEventFlags)
         case heldShortcut(keyCode: CGKeyCode, addedModifiers: [(CGEventFlags, CGKeyCode)], activeFlags: CGEventFlags)
         case toggledShortcut(action: ButtonAction)
@@ -232,8 +232,8 @@ final class VoiceTriggerController {
         let normalized = trigger.normalized
         guard normalized.isValid else { return false }
         switch normalized {
-        case .none:
-            state = .none
+        case .audioOnly:
+            state = .audioOnly
             return true
         case .holdFn:
             return activateHeldFlag(keyCode: 63, flag: .maskSecondaryFn)
@@ -257,7 +257,7 @@ final class VoiceTriggerController {
         guard let current = state else { return }
         state = nil
         switch current {
-        case .none:
+        case .audioOnly:
             break
         case let .heldFlag(keyCode, flag):
             postFlagEvent(keyCode: keyCode, flag: flag, down: false)

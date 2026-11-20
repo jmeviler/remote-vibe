@@ -173,7 +173,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
                 self.message.stringValue = trigger == .holdFn ? L("Fn 已被按住或没有权限，请重试") : L("语音触发键已被占用或缺少权限，请重试")
                 return
             }
-            if trigger != .none { self.fnDowns += 1 }
+            if trigger != .audioOnly { self.fnDowns += 1 }
             self.voiceTiming.mark("fnDown", at: ProcessInfo.processInfo.systemUptime)
             self.message.stringValue = L("正在说话 · 松开当前按键结束")
             // Retain the first syllables while WeChat opens its microphone.
@@ -215,7 +215,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
                 guard let self, self.sessionID == id else { return }
                 if self.voiceTrigger.active {
                     self.voiceTrigger.deactivate()
-                    if trigger != .none { self.fnUps += 1 }
+                    if trigger != .audioOnly { self.fnUps += 1 }
                 }
                 self.voiceTiming.mark("fnUp", at: ProcessInfo.processInfo.systemUptime)
                 self.voiceSchedule.after(timing.postReleaseDelay) { [weak self] in
@@ -241,7 +241,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private func abort() {
         sessionID = UUID()
         voiceSchedule.cancel()
-        let hadKey = voiceSettings.trigger != .none
+        let hadKey = voiceSettings.trigger != .audioOnly
         if voiceTrigger.active {
             voiceTrigger.deactivate()
             if hadKey { fnUps += 1 }
@@ -369,7 +369,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
             (.holdFn, L("按住 Fn（微信默认）")),
             (.holdRightOption, L("按住右 Option")),
             (.tapOptionSpace, L("点按 Option + Space 开始/结束")),
-            (.none, L("仅送音（不发快捷键）"))
+            (.audioOnly, L("仅送音（不发快捷键）"))
         ]
         for (index, entry) in presets.enumerated() {
             let presetItem = voiceMenu.addItem(withTitle: entry.1, action: #selector(selectVoiceTriggerPreset(_:)), keyEquivalent: "")
@@ -753,7 +753,7 @@ enum Main {
         if let existing = NSRunningApplication.runningApplications(withBundleIdentifier: "local.ben.RemoteVibe")
             .first(where: { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }) {
             if let url = existing.bundleURL { NSWorkspace.shared.open(url) }
-            else { existing.activate(options: []) }
+            else { _ = existing.activate() }
             return
         }
         let app = NSApplication.shared

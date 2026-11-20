@@ -11,20 +11,19 @@ final class ComboUnlockView: SettingsPage {
     private let enabled = NSButton(checkboxWithTitle: L("开启连招解锁"), target: nil, action: nil)
     private let record = SettingsTheme.button(L("录制连招"))
     private let finish = SettingsTheme.button(L("确认录制"))
-    private let practice = SettingsTheme.button(L("练习"))
-    private let cancel = SettingsTheme.button(L("结束 / 取消"))
+    private let practice = SettingsTheme.secondaryButton(L("练习"))
+    private let cancel = SettingsTheme.secondaryButton(L("结束 / 取消"))
     private let save = SettingsTheme.button(L("保存 / 更换密码"))
     private let clear = SettingsTheme.button(L("清除连招与密码…"), destructive: true)
     private let verify = SettingsTheme.button(L("开始手动锁屏验证"))
     private let success = SettingsTheme.button(L("看到了测试字符"))
-    private let failure = SettingsTheme.button(L("没有出现"))
+    private let failure = SettingsTheme.secondaryButton(L("没有出现"))
     private let permissions = SettingsTheme.button(L("允许按键控制"))
 
     init(controller: ComboUnlock, allowPermissions: @escaping () -> Void) {
         self.controller = controller
         self.allowPermissions = allowPermissions
         super.init(frame: NSRect(x: 0, y: 0, width: 1024, height: 574))
-        appearance = NSAppearance(named: .aqua)
         let intro = RemoteStage(frame: NSRect(x: 0, y: 0, width: 286, height: 574))
         addSubview(intro)
         let surface = SettingsPanel(frame: NSRect(x: 304, y: 0, width: 720, height: 574))

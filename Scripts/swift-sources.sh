@@ -51,6 +51,8 @@ rv_input_sources=(
 
 rv_ui_mapping_sources=(
   Sources/UI/SettingsUI.swift
+  Sources/UI/ShortcutRecorderView.swift
+  Sources/UI/VoiceStudioView.swift
   Sources/UI/KeyMappingView.swift
 )
 

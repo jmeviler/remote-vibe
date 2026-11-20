@@ -231,6 +231,45 @@ enum ButtonGestureUITest {
         }
         selectButton(0)
         precondition(!trigger.isEnabled && !action.isEnabled && !reset.isEnabled)
+        precondition(view.isVoiceSelected)
+        let voiceStudio = all.compactMap { $0 as? VoiceStudioView }.first!
+        precondition(!voiceStudio.isHidden)
+        view.updateVoiceLevel(0.65, active: true, testingOnly: true)
+        view.updateVoiceLevel(0, active: false, testingOnly: false)
+
+        // Remote physical press jump helper & gesture indicator dots + discard drafts + action filter + shortcut recorder.
+        view.selectRemoteButton(code: profile == .chromecast ? 8 : 7, pulse: false)
+        precondition(!view.isVoiceSelected && voiceStudio.isHidden)
+        selectTrigger(2)
+        choose(L("自定义按键 / 组合快捷键…"))
+        let recorder = all.compactMap { $0 as? ShortcutRecorderControl }.first { !$0.isHiddenOrHasHiddenAncestor }!
+        precondition(recorder.applyRecordedShortcut(keyCode: 126, modifiers: [.command, .shift, .function]))
+        precondition(recorder.usage == 0x52)
+        let expectedFlags = CGEventFlags([.maskCommand, .maskShift]).rawValue
+        precondition(recorder.modifiers == expectedFlags, "Arrow implicit .function must not add SecondaryFn")
+        precondition(trigger.label(forSegment: 2)?.contains("•") == true)
+        precondition(view.hasUnsavedChanges)
+
+        let search = all.compactMap { $0 as? NSSearchField }.first!
+        search.stringValue = "⌘C"
+        change(search)
+        let copyItem = action.itemArray.first { !$0.isSectionHeader && $0.title == L("复制 · ⌘C") }!
+        let muteItem = action.itemArray.first { !$0.isSectionHeader && $0.title == L("静音 / 取消静音") }!
+        precondition(!copyItem.isHidden && muteItem.isHidden)
+        search.stringValue = ""
+        change(search)
+        precondition(!muteItem.isHidden)
+
+        view.discardDrafts()
+        precondition(!view.hasUnsavedChanges && !save.isEnabled)
+        precondition(trigger.label(forSegment: 2)?.contains("•") == false)
+
+        // Verify dark appearance offscreen rendering does not crash or fail layout.
+        view.appearance = NSAppearance(named: .darkAqua)
+        view.layoutSubtreeIfNeeded()
+        let darkBitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds)!
+        view.cacheDisplay(in: view.bounds, to: darkBitmap)
+
         precondition(mapping.bindings.isEmpty && !mapping.listening)
         window.orderOut(nil)
     }

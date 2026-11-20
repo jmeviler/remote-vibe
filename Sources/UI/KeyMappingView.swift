@@ -81,7 +81,7 @@ private final class RemoteKeyButton: NSButton {
             pulseRing.lineWidth = 2.2
             pulseRing.stroke()
         } else if window?.firstResponder === self {
-            NSColor.keyboardFocusIndicatorColor.setStroke()
+            SettingsTheme.color(0x527A58).setStroke()
             let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: radius + 2, yRadius: radius + 2)
             ring.lineWidth = 2; ring.stroke()
         }
@@ -632,8 +632,10 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         actionSearchField.isHidden = voice || reservedToggle
         hintPanel.isHidden = voice
         hint.isHidden = voice
-        saveButton.isHidden = voice && !hasUnsavedChanges
+        saveButton.isHidden = voice
         resetButton.isHidden = voice
+        discardButton.isHidden = voice || !hasUnsavedChanges
+        liveStatus.isHidden = voice
 
         if voice { voiceStudio.reloadFromSettings() }
 
@@ -930,9 +932,9 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
             }
         }.first
         let voice = selected == 0
-        saveButton.isHidden = voice && !dirty
-        discardButton.isHidden = !dirty
-        liveStatus.isHidden = voice && !dirty && invalid == nil && mapping.configurationNotice == nil
+        saveButton.isHidden = voice
+        discardButton.isHidden = voice || !dirty
+        liveStatus.isHidden = voice
         if let invalid {
             liveStatus.stringValue = invalid
             liveStatus.textColor = SettingsTheme.error

@@ -1,4 +1,4 @@
-Remote Vibe 0.6.0 · 简体中文 / English · Apple Silicon / Intel · macOS 15+
+Remote Vibe 0.6.1 · 简体中文 / English · Apple Silicon / Intel · macOS 15+
 
 - 全新“语音工作台”（Voice Studio）：在遥控器示意图上点击麦克风语音键即可进入专属语音设置面板，直接配置微信 / 豆包 / 系统听写 / 自定义快捷键及通话连说开关；在设置窗口内按住遥控器语音键可实时查看麦克风收音音量条跳动（自动静默试麦，不误触输入快捷键）。
 - 直观改键与真机联动：打开设置窗口时按下手里的遥控器实体按键即可自动高亮跳到对应键位；`单击 / 双击 / 长按` 自动以圆点标注已配置状态，关闭窗口若有未保存草稿会弹窗提醒。
@@ -10,8 +10,8 @@ Remote Vibe 0.6.0 · 简体中文 / English · Apple Silicon / Intel · macOS 15
 
 | Mac 芯片 | 首次安装或升级：App + 语音组件 | 已有对应语音组件：仅更新 App |
 | --- | --- | --- |
-| Apple Silicon（M1 / M2 / M3 / M4 等 M 系列） | `Remote-Vibe-0.6.0-Mac-AppleSilicon.zip` | `Remote-Vibe-0.6.0-App-AppleSilicon.zip` |
-| Intel | `Remote-Vibe-0.6.0-Mac-Intel.zip` | `Remote-Vibe-0.6.0-App-Intel.zip` |
+| Apple Silicon（M1 / M2 / M3 / M4 等 M 系列） | `Remote-Vibe-0.6.1-Mac-AppleSilicon.zip` | `Remote-Vibe-0.6.1-App-AppleSilicon.zip` |
+| Intel | `Remote-Vibe-0.6.1-Mac-Intel.zip` | `Remote-Vibe-0.6.1-App-Intel.zip` |
 
 在“关于本机”查看芯片。两种架构均要求 macOS 15 或更新。更新前退出 App、备份旧 App，再替换原位置；App 更新包不会重启音频服务。完整包附对应源码、使用说明和卸载包。
 
@@ -21,7 +21,7 @@ Remote Vibe 0.6.0 · 简体中文 / English · Apple Silicon / Intel · macOS 15
 
 ---
 
-Remote Vibe 0.6.0 · Simplified Chinese / English · Apple Silicon / Intel · macOS 15+
+Remote Vibe 0.6.1 · Simplified Chinese / English · Apple Silicon / Intel · macOS 15+
 
 - Voice Studio & live mic meter: clicking the microphone button on the remote diagram opens an interactive Voice Studio with presets (WeChat, Doubao/Whisper, Dictation, Mic-only, or Custom Shortcut), audio routing toggles, and a live 24-bar audio input meter (holding the remote mic button while viewing Settings runs a silent mic check automatically).
 - Physical-to-UI button jump & gesture indicators: pressing any physical key on a connected remote while Settings is focused jumps straight to that key; `Single / Double / Long Press` tabs mark configured gestures, and closing with unsaved drafts prompts to save or discard.

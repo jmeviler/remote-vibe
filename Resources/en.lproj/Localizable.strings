@@ -662,4 +662,6 @@
 "需保持 Mac 微信在后台运行并开启「长按 Fn 全局语音输入」。若按住说话不出字，可点右下角「微信语音指南」排查。" = "Keep WeChat for Mac running with Hold Fn Global Voice Input enabled. Click WeChat Guide below if text does not appear.";
 "麦克风与连说设置" = "Microphone & Turnaround";
 "麦克风已就绪 · 按住语音键收音（不发快捷键）" = "Microphone ready · Hold voice button to stream audio (no shortcut)";
+"匹配到 %@ 个动作 · ↑↓ 选择，回车直接选用" = "%@ matching actions · ↑↓ to navigate, Return to select";
+"未找到匹配的预设动作 · 可回车进入自定义快捷键录制" = "No matching preset · Press Return to record a custom shortcut";
 "默认键位 · 连接遥控器后自动生效" = "Default bindings · Active automatically once remote connects";

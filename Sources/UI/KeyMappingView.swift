@@ -225,7 +225,6 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
 
         searchBar.frame = NSRect(x: 802, y: 191, width: 196, height: 28)
         actionSearchField.setStyledPlaceholder(L("搜索动作…"))
-        actionSearchField.delegate = self
         actionSearchField.target = self
         actionSearchField.action = #selector(searchFilterChanged)
         actionSearchField.setAccessibilityLabel(L("搜索按键动作"))
@@ -236,6 +235,28 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
             } else {
                 self.searchResultsPopup.isHidden = true
             }
+        }
+        actionSearchField.onMoveSelection = { [weak self] delta in
+            guard let self, !self.searchResultsPopup.isHidden else { return false }
+            self.searchResultsPopup.moveHighlight(by: delta)
+            return true
+        }
+        actionSearchField.onConfirmSelection = { [weak self] in
+            guard let self, !self.searchResultsPopup.isHidden,
+                  let presetIndex = self.searchResultsPopup.highlightedPresetIndex else { return false }
+            self.selectSearchResult(presetIndex: presetIndex)
+            return true
+        }
+        actionSearchField.onEscape = { [weak self] in
+            guard let self else { return false }
+            if !self.actionSearchField.stringValue.isEmpty {
+                self.actionSearchField.stringValue = ""
+                self.applyActionSearchFilter(showPopupIfNonEmpty: false)
+            } else {
+                self.searchResultsPopup.isHidden = true
+                self.window?.makeFirstResponder(nil)
+            }
+            return true
         }
         addSubview(searchBar)
 
@@ -887,35 +908,6 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         setSelectedBinding(value)
         updateRemoteButtonStates()
         refreshStatus()
-    }
-
-    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-        guard control === actionSearchField else { return false }
-        if commandSelector == #selector(NSResponder.moveDown(_:)), !searchResultsPopup.isHidden {
-            searchResultsPopup.moveHighlight(by: 1)
-            return true
-        }
-        if commandSelector == #selector(NSResponder.moveUp(_:)), !searchResultsPopup.isHidden {
-            searchResultsPopup.moveHighlight(by: -1)
-            return true
-        }
-        if commandSelector == #selector(NSResponder.insertNewline(_:)), !searchResultsPopup.isHidden {
-            if let presetIndex = searchResultsPopup.highlightedPresetIndex {
-                selectSearchResult(presetIndex: presetIndex)
-                return true
-            }
-        }
-        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            if !actionSearchField.stringValue.isEmpty {
-                actionSearchField.stringValue = ""
-                applyActionSearchFilter(showPopupIfNonEmpty: false)
-            } else {
-                searchResultsPopup.isHidden = true
-                window?.makeFirstResponder(nil)
-            }
-            return true
-        }
-        return false
     }
 
     func controlTextDidChange(_ notification: Notification) {

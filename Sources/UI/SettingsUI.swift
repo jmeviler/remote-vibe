@@ -353,7 +353,7 @@ private final class PlainSearchFieldCell: NSTextFieldCell {
     }
 }
 
-final class PlainSearchField: NSTextField {
+final class PlainSearchField: NSTextField, NSTextFieldDelegate {
     override class var cellClass: AnyClass? {
         get { PlainSearchFieldCell.self }
         set {}
@@ -361,6 +361,9 @@ final class PlainSearchField: NSTextField {
 
     var onStateChange: (() -> Void)?
     var onFocusChange: ((Bool) -> Void)?
+    var onMoveSelection: ((Int) -> Bool)?
+    var onConfirmSelection: (() -> Bool)?
+    var onEscape: (() -> Bool)?
 
     override var stringValue: String {
         didSet { onStateChange?() }
@@ -380,8 +383,25 @@ final class PlainSearchField: NSTextField {
         usesSingleLineMode = true
         font = .systemFont(ofSize: 12)
         textColor = SettingsTheme.ink
+        delegate = self
         setAccessibilityRole(.textField)
         setAccessibilitySubrole(.searchField)
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.moveDown(_:)) {
+            return onMoveSelection?(1) ?? false
+        }
+        if commandSelector == #selector(NSResponder.moveUp(_:)) {
+            return onMoveSelection?(-1) ?? false
+        }
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            return onConfirmSelection?() ?? false
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            return onEscape?() ?? false
+        }
+        return false
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }

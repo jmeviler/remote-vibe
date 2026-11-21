@@ -318,7 +318,7 @@ final class StyledSegmentedControl: NSSegmentedControl {
     }
 }
 
-private final class PlainSearchFieldCell: NSSearchFieldCell {
+private final class PlainSearchFieldCell: NSTextFieldCell {
     override init(textCell string: String) {
         super.init(textCell: string)
         configureCell()
@@ -330,8 +330,8 @@ private final class PlainSearchFieldCell: NSSearchFieldCell {
     }
 
     private func configureCell() {
-        searchButtonCell = nil
-        cancelButtonCell = nil
+        isEditable = true
+        isSelectable = true
         isBordered = false
         isBezeled = false
         drawsBackground = false
@@ -341,10 +341,6 @@ private final class PlainSearchFieldCell: NSSearchFieldCell {
         isScrollable = true
         lineBreakMode = .byTruncatingTail
     }
-
-    override func searchButtonRect(forBounds rect: NSRect) -> NSRect { .zero }
-    override func cancelButtonRect(forBounds rect: NSRect) -> NSRect { .zero }
-    override func searchTextRect(forBounds rect: NSRect) -> NSRect { rect }
 
     override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
         (textObj as? NSTextView)?.insertionPointColor = SettingsTheme.forest
@@ -357,7 +353,7 @@ private final class PlainSearchFieldCell: NSSearchFieldCell {
     }
 }
 
-final class PlainSearchField: NSSearchField {
+final class PlainSearchField: NSTextField {
     override class var cellClass: AnyClass? {
         get { PlainSearchFieldCell.self }
         set {}
@@ -374,13 +370,17 @@ final class PlainSearchField: NSSearchField {
         if !(cell is PlainSearchFieldCell) {
             cell = PlainSearchFieldCell(textCell: "")
         }
+        isEditable = true
+        isSelectable = true
         isBordered = false
         isBezeled = false
         drawsBackground = false
         focusRingType = .none
-        sendsSearchStringImmediately = true
+        usesSingleLineMode = true
         font = .systemFont(ofSize: 12)
         textColor = SettingsTheme.ink
+        setAccessibilityRole(.textField)
+        setAccessibilitySubrole(.searchField)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -408,6 +408,9 @@ final class PlainSearchField: NSSearchField {
 
     override func textDidChange(_ notification: Notification) {
         super.textDidChange(notification)
+        if let action {
+            NSApp.sendAction(action, to: target, from: self)
+        }
         onStateChange?()
     }
 
@@ -436,27 +439,36 @@ final class ActionSearchBar: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         addSubview(searchField)
+        relayoutField()
         searchField.onStateChange = { [weak self] in
-            self?.needsLayout = true
+            self?.relayoutField()
             self?.needsDisplay = true
         }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    override func layout() {
-        super.layout()
+    private func relayoutField() {
         let leftInset: CGFloat = 27
         let rightInset: CGFloat = searchField.stringValue.isEmpty ? 8 : 25
         let resolvedFont = searchField.font ?? .systemFont(ofSize: 12)
         let fieldHeight = min(bounds.height, ceil(("Ag搜" as NSString).size(withAttributes: [.font: resolvedFont]).height) + 1)
-        let y = floor((bounds.height - fieldHeight) * 2) / 2
+        let y = max(0, floor((bounds.height - fieldHeight) * 2) / 2)
         searchField.frame = NSRect(
             x: leftInset,
             y: y,
             width: max(24, bounds.width - leftInset - rightInset),
             height: fieldHeight
         )
+    }
+
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        relayoutField()
+    }
+
+    override func layout() {
+        super.layout()
+        relayoutField()
     }
 
     override func mouseDown(with event: NSEvent) {

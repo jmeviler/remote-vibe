@@ -96,7 +96,7 @@ enum DesignPreview {
             try capture(shell, name: profile.rawValue + "-wide", directory: directory)
             resize(1080)
             let controls = descendants(view)
-            let searchField = controls.compactMap { $0 as? NSSearchField }.first!
+            let searchField = controls.compactMap { $0 as? PlainSearchField }.first!
             precondition(window.makeFirstResponder(searchField), "Search field must accept keyboard focus")
             try capture(shell, name: profile.rawValue + "-search-focused", directory: directory)
             window.makeFirstResponder(nil)

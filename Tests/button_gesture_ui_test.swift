@@ -250,7 +250,7 @@ enum ButtonGestureUITest {
         precondition((trigger as? StyledSegmentedControl)?.configuredSegments.contains(2) == true)
         precondition(view.hasUnsavedChanges)
 
-        let search = all.compactMap { $0 as? NSSearchField }.first!
+        let search = all.compactMap { $0 as? PlainSearchField }.first!
         view.layoutSubtreeIfNeeded()
         let searchBar = search.superview!
         precondition(search.frame.minX >= 26, "Search text area must never overlap the leading magnifying glass icon")

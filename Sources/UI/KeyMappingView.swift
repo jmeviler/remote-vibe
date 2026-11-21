@@ -136,6 +136,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     private let actionPicker = StyledPopUpButton(frame: .zero, pullsDown: false)
     private let searchBar = ActionSearchBar(frame: .zero)
     private var actionSearchField: PlainSearchField { searchBar.searchField }
+    private let searchResultsPopup = ActionSearchResultsPopup(frame: NSRect(x: 440, y: 223, width: 558, height: 220))
     private let shortcutRecorder = ShortcutRecorderControl()
     private let keyPicker = StyledPopUpButton(frame: .zero, pullsDown: false)
     private let textEditor = NSTextView()
@@ -227,6 +228,36 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         actionSearchField.target = self
         actionSearchField.action = #selector(searchFilterChanged)
         actionSearchField.setAccessibilityLabel(L("搜索按键动作"))
+        actionSearchField.onFocusChange = { [weak self] focused in
+            guard let self else { return }
+            if focused {
+                self.applyActionSearchFilter(showPopupIfNonEmpty: true)
+            } else {
+                self.searchResultsPopup.isHidden = true
+            }
+        }
+        actionSearchField.onMoveSelection = { [weak self] delta in
+            guard let self, !self.searchResultsPopup.isHidden else { return false }
+            self.searchResultsPopup.moveHighlight(by: delta)
+            return true
+        }
+        actionSearchField.onConfirmSelection = { [weak self] in
+            guard let self, !self.searchResultsPopup.isHidden,
+                  let presetIndex = self.searchResultsPopup.highlightedPresetIndex else { return false }
+            self.selectSearchResult(presetIndex: presetIndex)
+            return true
+        }
+        actionSearchField.onEscape = { [weak self] in
+            guard let self else { return false }
+            if !self.actionSearchField.stringValue.isEmpty {
+                self.actionSearchField.stringValue = ""
+                self.applyActionSearchFilter(showPopupIfNonEmpty: false)
+            } else {
+                self.searchResultsPopup.isHidden = true
+                self.window?.makeFirstResponder(nil)
+            }
+            return true
+        }
         addSubview(searchBar)
 
         actionPicker.autoenablesItems = false
@@ -347,8 +378,20 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         }
         addSubview(voiceStudio)
 
+        searchResultsPopup.isHidden = true
+        searchResultsPopup.onSelectPreset = { [weak self] presetIndex in
+            self?.selectSearchResult(presetIndex: presetIndex)
+        }
+        addSubview(searchResultsPopup)
+
         displaySelection()
         captureHorizontalLayout()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        searchResultsPopup.isHidden = true
+        window?.makeFirstResponder(nil)
+        super.mouseDown(with: event)
     }
 
     override func resizeSubviews(withOldSize oldSize: NSSize) {
@@ -358,6 +401,12 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         deviceName.setFrameSize(NSSize(width: stage.bounds.width - 48, height: 25))
         modePicker.setFrameSize(NSSize(width: stage.bounds.width - 48, height: 34))
         capacity.setFrameSize(NSSize(width: stage.bounds.width - 48, height: 16))
+        searchResultsPopup.frame = NSRect(
+            x: actionPicker.frame.minX,
+            y: 223,
+            width: actionPicker.frame.width,
+            height: searchResultsPopup.frame.height
+        )
     }
 
     func switchProfile() {
@@ -376,6 +425,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     func stopRecordingShortcuts() {
         shortcutRecorder.stopRecording()
         voiceStudio.stopRecordingShortcut()
+        searchResultsPopup.isHidden = true
     }
 
     func reloadVoiceStudio() {
@@ -517,7 +567,16 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         displaySelection()
     }
     @objc private func searchFilterChanged() {
-        applyActionSearchFilter()
+        applyActionSearchFilter(showPopupIfNonEmpty: true)
+    }
+
+    func selectSearchResult(presetIndex: Int) {
+        guard let item = presetItem(presetIndex), item.isEnabled else { return }
+        actionSearchField.stringValue = ""
+        applyActionSearchFilter(showPopupIfNonEmpty: false)
+        window?.makeFirstResponder(nil)
+        actionPicker.select(item)
+        actionChanged()
     }
     @objc private func discardPressed() {
         discardDrafts()
@@ -559,10 +618,13 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         triggerPicker.configuredSegments = configured
     }
 
-    private func applyActionSearchFilter() {
+    private func applyActionSearchFilter(showPopupIfNonEmpty: Bool = false) {
         guard let menu = actionPicker.menu else { return }
-        let query = actionSearchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let query = actionSearchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let voiceIndex = presets.firstIndex { $0.binding?.kind == .remoteVoice }
+        var scoredMatches: [(score: Int, order: Int, item: ActionSearchResultItem)] = []
+        var itemOrder = 0
+
         for item in menu.items {
             if item.isSectionHeader || item.isSeparatorItem {
                 item.isHidden = false
@@ -576,12 +638,24 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
             }
             if baseHidden {
                 item.isHidden = true
-            } else if query.isEmpty || item === actionPicker.selectedItem {
+            } else if query.isEmpty {
                 item.isHidden = false
             } else if presets.indices.contains(idx) {
                 let preset = presets[idx]
-                item.isHidden = !preset.title.lowercased().contains(query) && !preset.group.lowercased().contains(query)
+                if let score = ActionCatalog.searchScore(for: preset, displayedTitle: item.title, query: query) {
+                    item.isHidden = false
+                    if item.isEnabled {
+                        scoredMatches.append((
+                            score: score,
+                            order: itemOrder,
+                            item: ActionSearchResultItem(presetIndex: idx, title: item.title, group: preset.group)
+                        ))
+                    }
+                } else {
+                    item.isHidden = item !== actionPicker.selectedItem
+                }
             }
+            itemOrder += 1
         }
         if !query.isEmpty {
             var sectionHeader: NSMenuItem?
@@ -598,6 +672,26 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
                 }
             }
             if let lastHeader = sectionHeader { lastHeader.isHidden = !sectionHasVisible }
+        }
+
+        let voice = selected == 0
+        if !query.isEmpty && !voice && !reservedToggle && showPopupIfNonEmpty {
+            scoredMatches.sort {
+                if $0.score != $1.score { return $0.score > $1.score }
+                return $0.order < $1.order
+            }
+            let customIdx = presets.count - 1
+            let fallback = ActionSearchResultItem(presetIndex: customIdx, title: presets[customIdx].title, group: presets[customIdx].group)
+            searchResultsPopup.update(
+                matches: scoredMatches.map(\.item),
+                fallbackCustom: fallback,
+                x: actionPicker.frame.minX,
+                y: 223,
+                width: actionPicker.frame.width
+            )
+            searchResultsPopup.isHidden = false
+        } else if query.isEmpty || voice || reservedToggle {
+            searchResultsPopup.isHidden = true
         }
     }
 
@@ -646,7 +740,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         let unset = selectedTrigger != .singleClick && selectedConfiguration[selectedTrigger] == nil
         let targetIndex = ActionCatalog.index(for: value, preferredIndex: preferredPresetIndices[selectionSlotKey])
         actionPicker.select(presetItem(unset ? 0 : targetIndex))
-        applyActionSearchFilter()
+        applyActionSearchFilter(showPopupIfNonEmpty: searchBar.isEditingSearch)
         textEditor.string = value.text ?? ""
         targetField.stringValue = value.kind == .openApp ? value.appPath ?? "" : value.url ?? ""
         keyPicker.selectItem(at: MappingKey.all.firstIndex { $0.usage == value.usage } ?? 0)

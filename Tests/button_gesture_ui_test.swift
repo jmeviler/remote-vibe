@@ -262,13 +262,27 @@ enum ButtonGestureUITest {
             precondition(abs(clipRect.midY - searchBar.bounds.midY) <= 2, "Focused field editor clip view vertically misaligned: \(clipRect) in \(searchBar.bounds)")
         }
         window.makeFirstResponder(nil)
+        let searchPopup = all.compactMap { $0 as? ActionSearchResultsPopup }.first!
+        precondition(searchPopup.isHidden)
         search.stringValue = "⌘C"
         change(search)
         let copyItem = action.itemArray.first { !$0.isSectionHeader && $0.title == L("复制 · ⌘C") }!
         let muteItem = action.itemArray.first { !$0.isSectionHeader && $0.title == L("静音 / 取消静音") }!
         precondition(!copyItem.isHidden && muteItem.isHidden)
-        search.stringValue = ""
+        precondition(!searchPopup.isHidden && searchPopup.displayedItems.contains { $0.title == L("复制 · ⌘C") })
+
+        // Verify symbol-alias search ("Shift" matches both literal "Shift" and "⇧" shortcuts) and direct selection.
+        search.stringValue = "Shift"
         change(search)
+        precondition(!searchPopup.isHidden)
+        precondition(searchPopup.displayedItems.contains { $0.title == L("Shift + Tab 上一项") })
+        precondition(searchPopup.displayedItems.contains { $0.title == L("向左选择 · ⇧←") })
+        searchPopup.moveHighlight(by: 1)
+        let secondChoice = searchPopup.displayedItems[1]
+        precondition(searchPopup.highlightedPresetIndex == secondChoice.presetIndex)
+        view.selectSearchResult(presetIndex: secondChoice.presetIndex)
+        precondition(searchPopup.isHidden && search.stringValue.isEmpty)
+        precondition(action.titleOfSelectedItem == secondChoice.title)
         precondition(!muteItem.isHidden)
 
         view.discardDrafts()

@@ -99,7 +99,7 @@ enum DesignPreview {
             let searchField = controls.compactMap { $0 as? PlainSearchField }.first!
             precondition(window.makeFirstResponder(searchField), "Search field must accept keyboard focus")
             try capture(shell, name: profile.rawValue + "-search-focused", directory: directory)
-            searchField.stringValue = "复制"
+            searchField.stringValue = "Shift"
             change(searchField)
             try capture(shell, name: profile.rawValue + "-search-typed", directory: directory)
             searchField.stringValue = ""

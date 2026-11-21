@@ -141,6 +141,61 @@ enum ActionCatalog {
         let matched = index(for: binding)
         return presets[matched].binding == nil ? binding.title : presets[matched].title
     }
+
+    static func searchScore(for preset: ActionPreset, displayedTitle: String? = nil, query rawQuery: String) -> Int? {
+        let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return 0 }
+        let title = (displayedTitle ?? preset.title).lowercased()
+        let group = preset.group.lowercased()
+
+        var keywords = "\(title) \(group)"
+        let flags = CGEventFlags(rawValue: preset.binding?.modifiers ?? 0)
+        if title.contains("⌘") || flags.contains(.maskCommand) {
+            keywords += " cmd command 苹果键 花键"
+        }
+        if title.contains("⇧") || flags.contains(.maskShift) {
+            keywords += " shift"
+        }
+        if title.contains("⌥") || flags.contains(.maskAlternate) {
+            keywords += " opt option alt"
+        }
+        if title.contains("⌃") || flags.contains(.maskControl) {
+            keywords += " ctrl control"
+        }
+        if title.contains("⌫") || preset.binding?.usage == 0x2A || preset.binding?.usage == 0x4C {
+            keywords += " backspace delete del 退格 删除"
+        }
+        if title.contains("⏎") || preset.binding?.usage == 0x28 {
+            keywords += " enter return 回车 确认"
+        }
+        if preset.binding?.usage == 0x29 {
+            keywords += " esc escape 取消 退出"
+        }
+        if preset.binding?.usage == 0x2C {
+            keywords += " space 空格"
+        }
+        if let keyName = preset.binding?.key?.name.lowercased() {
+            keywords += " \(keyName)"
+        }
+
+        let normalizedQuery = trimmed.replacingOccurrences(of: " + ", with: " ")
+        let rawTokens = normalizedQuery.split(whereSeparator: \.isWhitespace).map(String.init)
+        var tokens: [String] = []
+        for token in rawTokens {
+            if token.count > 2, token.contains("+"), !token.hasSuffix("+") {
+                tokens.append(contentsOf: token.split(separator: "+").map(String.init))
+            } else {
+                tokens.append(token)
+            }
+        }
+        guard !tokens.isEmpty, tokens.allSatisfy({ keywords.contains($0) }) else {
+            return nil
+        }
+        if title.hasPrefix(trimmed) { return 300 }
+        if title.contains(trimmed) { return 200 }
+        if group.contains(trimmed) { return 120 }
+        return 100
+    }
 }
 
 // macOS auxiliary key types from IOKit/hidsystem/ev_keymap.h.

@@ -353,13 +353,17 @@ private final class PlainSearchFieldCell: NSTextFieldCell {
     }
 }
 
-final class PlainSearchField: NSTextField {
+final class PlainSearchField: NSTextField, NSTextFieldDelegate {
     override class var cellClass: AnyClass? {
         get { PlainSearchFieldCell.self }
         set {}
     }
 
     var onStateChange: (() -> Void)?
+    var onFocusChange: ((Bool) -> Void)?
+    var onMoveSelection: ((Int) -> Bool)?
+    var onConfirmSelection: (() -> Bool)?
+    var onEscape: (() -> Bool)?
 
     override var stringValue: String {
         didSet { onStateChange?() }
@@ -379,8 +383,25 @@ final class PlainSearchField: NSTextField {
         usesSingleLineMode = true
         font = .systemFont(ofSize: 12)
         textColor = SettingsTheme.ink
+        delegate = self
         setAccessibilityRole(.textField)
         setAccessibilitySubrole(.searchField)
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.moveDown(_:)) {
+            return onMoveSelection?(1) ?? false
+        }
+        if commandSelector == #selector(NSResponder.moveUp(_:)) {
+            return onMoveSelection?(-1) ?? false
+        }
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            return onConfirmSelection?() ?? false
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            return onEscape?() ?? false
+        }
+        return false
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -399,11 +420,20 @@ final class PlainSearchField: NSTextField {
     override func didAddSubview(_ subview: NSView) {
         super.didAddSubview(subview)
         onStateChange?()
+        onFocusChange?(true)
     }
 
     override func willRemoveSubview(_ subview: NSView) {
         super.willRemoveSubview(subview)
-        DispatchQueue.main.async { [weak self] in self?.onStateChange?() }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.onStateChange?()
+            let stillFocused = self.window?.firstResponder === self ||
+                (self.currentEditor() != nil && self.window?.firstResponder === self.currentEditor())
+            if !stillFocused {
+                self.onFocusChange?(false)
+            }
+        }
     }
 
     override func textDidChange(_ notification: Notification) {
@@ -506,6 +536,205 @@ final class ActionSearchBar: NSView {
             let clearRect = NSRect(x: bounds.width - iconSize - 8, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize)
             SettingsTheme.symbol("xmark.circle.fill", in: clearRect, muted: true)
         }
+    }
+}
+
+struct ActionSearchResultItem {
+    let presetIndex: Int
+    let title: String
+    let group: String
+}
+
+private final class ActionSearchResultsListView: NSView {
+    static let rowHeight: CGFloat = 32
+    var items: [ActionSearchResultItem] = [] { didSet { needsDisplay = true } }
+    var highlightedIndex: Int = 0 { didSet { if oldValue != highlightedIndex { needsDisplay = true } } }
+    var onSelect: ((Int) -> Void)?
+    private var tracking: NSTrackingArea?
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { false }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let tracking { removeTrackingArea(tracking) }
+        let area = NSTrackingArea(rect: bounds, options: [.activeInActiveApp, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        tracking = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let row = Int(point.y / Self.rowHeight)
+        if items.indices.contains(row) {
+            highlightedIndex = row
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let row = Int(point.y / Self.rowHeight)
+        guard items.indices.contains(row) else { return }
+        highlightedIndex = row
+        onSelect?(items[row].presetIndex)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+
+        for (index, item) in items.enumerated() {
+            let rowRect = NSRect(x: 4, y: CGFloat(index) * Self.rowHeight, width: max(20, bounds.width - 8), height: Self.rowHeight)
+            guard rowRect.intersects(dirtyRect) else { continue }
+            let selected = index == highlightedIndex
+            if selected {
+                let pill = NSBezierPath(roundedRect: rowRect.insetBy(dx: 0, dy: 1), xRadius: 7, yRadius: 7)
+                SettingsTheme.forest.setFill()
+                pill.fill()
+            }
+
+            let groupAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11, weight: .regular),
+                .foregroundColor: selected ? SettingsTheme.color(0xD3E1D1) : SettingsTheme.secondary,
+                .paragraphStyle: paragraph
+            ]
+            let groupSize = (item.group as NSString).size(withAttributes: groupAttrs)
+            let maxGroupWidth = min(groupSize.width, max(60, rowRect.width * 0.34))
+            let groupX = rowRect.maxX - maxGroupWidth - 10
+            let groupY = rowRect.midY - groupSize.height / 2
+            (item.group as NSString).draw(
+                in: NSRect(x: groupX, y: groupY, width: maxGroupWidth, height: groupSize.height + 2),
+                withAttributes: groupAttrs
+            )
+
+            let titleAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 12.5, weight: selected ? .semibold : .medium),
+                .foregroundColor: selected ? NSColor.white : SettingsTheme.ink,
+                .paragraphStyle: paragraph
+            ]
+            let titleHeight = (item.title as NSString).size(withAttributes: titleAttrs).height
+            let titleWidth = max(40, groupX - rowRect.minX - 22)
+            (item.title as NSString).draw(
+                in: NSRect(x: rowRect.minX + 10, y: rowRect.midY - titleHeight / 2, width: titleWidth, height: titleHeight + 2),
+                withAttributes: titleAttrs
+            )
+        }
+    }
+}
+
+final class ActionSearchResultsPopup: NSView {
+    private let headerLabel = NSTextField(labelWithString: "")
+    private let scrollView = NSScrollView()
+    private let listView = ActionSearchResultsListView()
+    private(set) var displayedItems: [ActionSearchResultItem] = []
+
+    var onSelectPreset: ((Int) -> Void)?
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { false }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        headerLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        headerLabel.textColor = SettingsTheme.secondary
+        headerLabel.lineBreakMode = .byTruncatingTail
+        headerLabel.maximumNumberOfLines = 1
+        addSubview(headerLabel)
+
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.documentView = listView
+        addSubview(scrollView)
+
+        listView.onSelect = { [weak self] presetIndex in
+            self?.onSelectPreset?(presetIndex)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    var highlightedPresetIndex: Int? {
+        guard displayedItems.indices.contains(listView.highlightedIndex) else { return nil }
+        return displayedItems[listView.highlightedIndex].presetIndex
+    }
+
+    func update(matches: [ActionSearchResultItem], fallbackCustom: ActionSearchResultItem?, x: CGFloat, y: CGFloat, width: CGFloat) {
+        if !matches.isEmpty {
+            displayedItems = matches
+            headerLabel.stringValue = L("匹配到 %@ 个动作 · ↑↓ 选择，回车直接选用", String(matches.count))
+        } else if let fallbackCustom {
+            displayedItems = [fallbackCustom]
+            headerLabel.stringValue = L("未找到匹配的预设动作 · 可回车进入自定义快捷键录制")
+        } else {
+            displayedItems = []
+        }
+
+        let visibleRows = max(1, min(displayedItems.count, 6))
+        let listHeight = CGFloat(visibleRows) * ActionSearchResultsListView.rowHeight
+        let totalHeight = 28 + listHeight + 6
+        frame = NSRect(x: x, y: y, width: width, height: totalHeight)
+        relayoutChildren()
+        listView.items = displayedItems
+        listView.highlightedIndex = 0
+        scrollView.contentView.scroll(to: .zero)
+        scrollView.reflectScrolledClipView(scrollView.contentView)
+        needsDisplay = true
+    }
+
+    func moveHighlight(by delta: Int) {
+        guard !displayedItems.isEmpty else { return }
+        let next = max(0, min(displayedItems.count - 1, listView.highlightedIndex + delta))
+        listView.highlightedIndex = next
+        let rowRect = NSRect(x: 0, y: CGFloat(next) * ActionSearchResultsListView.rowHeight, width: listView.bounds.width, height: ActionSearchResultsListView.rowHeight)
+        listView.scrollToVisible(rowRect)
+    }
+
+    private func relayoutChildren() {
+        headerLabel.frame = NSRect(x: 12, y: 6, width: max(40, bounds.width - 24), height: 16)
+        let scrollHeight = max(ActionSearchResultsListView.rowHeight, bounds.height - 34)
+        scrollView.frame = NSRect(x: 2, y: 28, width: max(40, bounds.width - 4), height: scrollHeight)
+        let docHeight = max(scrollHeight, CGFloat(displayedItems.count) * ActionSearchResultsListView.rowHeight)
+        listView.frame = NSRect(x: 0, y: 0, width: scrollView.contentSize.width, height: docHeight)
+    }
+
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        relayoutChildren()
+    }
+
+    override func layout() {
+        super.layout()
+        relayoutChildren()
+    }
+
+    override func mouseDown(with event: NSEvent) {}
+
+    override func draw(_ dirtyRect: NSRect) {
+        let cardRect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let radius: CGFloat = 11
+        let cardPath = NSBezierPath(roundedRect: cardRect, xRadius: radius, yRadius: radius)
+        SettingsTheme.paper.setFill()
+        cardPath.fill()
+
+        NSGraphicsContext.saveGraphicsState()
+        cardPath.addClip()
+        SettingsTheme.subtleFill.setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 27).fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        SettingsTheme.line.setStroke()
+        let divider = NSBezierPath()
+        divider.move(to: NSPoint(x: 1, y: 27.5))
+        divider.line(to: NSPoint(x: bounds.width - 1, y: 27.5))
+        divider.lineWidth = 1
+        divider.stroke()
+
+        SettingsTheme.adaptive(light: 0xAEBBAC, dark: 0x425748).setStroke()
+        cardPath.lineWidth = 1.2
+        cardPath.stroke()
     }
 }
 

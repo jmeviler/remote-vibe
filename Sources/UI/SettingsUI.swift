@@ -449,7 +449,7 @@ final class ActionSearchBar: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     private func relayoutField() {
-        let leftInset: CGFloat = 27
+        let leftInset: CGFloat = 28
         let rightInset: CGFloat = searchField.stringValue.isEmpty ? 8 : 25
         let resolvedFont = searchField.font ?? .systemFont(ofSize: 12)
         let fieldHeight = min(bounds.height, ceil(("Ag搜" as NSString).size(withAttributes: [.font: resolvedFont]).height) + 1)

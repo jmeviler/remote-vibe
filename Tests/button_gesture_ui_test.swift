@@ -253,12 +253,12 @@ enum ButtonGestureUITest {
         let search = all.compactMap { $0 as? PlainSearchField }.first!
         view.layoutSubtreeIfNeeded()
         let searchBar = search.superview!
-        precondition(search.frame.minX >= 26, "Search text area must never overlap the leading magnifying glass icon")
+        precondition(search.frame.minX >= 27, "Search text area must never overlap the leading magnifying glass icon")
         precondition(abs(search.frame.midY - searchBar.bounds.midY) <= 1.5, "Search text field vertically misaligned: \(search.frame) in \(searchBar.bounds)")
         precondition(window.makeFirstResponder(search), "Action search field must accept focus")
         if let editor = search.currentEditor(), let clip = editor.superview {
             let clipRect = searchBar.convert(clip.frame, from: clip.superview)
-            precondition(clipRect.minX >= 26, "Focused field editor clip view overlapped magnifying glass: \(clipRect)")
+            precondition(clipRect.minX > 23, "Focused field editor clip view overlapped magnifying glass (10..23): \(clipRect)")
             precondition(abs(clipRect.midY - searchBar.bounds.midY) <= 2, "Focused field editor clip view vertically misaligned: \(clipRect) in \(searchBar.bounds)")
         }
         window.makeFirstResponder(nil)

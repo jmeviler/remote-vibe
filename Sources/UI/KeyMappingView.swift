@@ -134,8 +134,8 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     private let triggerPicker = StyledSegmentedControl()
     private let actionLabel = SettingsTheme.eyebrow(L("执行动作"))
     private let actionPicker = StyledPopUpButton(frame: .zero, pullsDown: false)
-    private let searchPill = SettingsPanel()
-    private let actionSearchField = NSSearchField(frame: .zero)
+    private let searchBar = ActionSearchBar(frame: .zero)
+    private var actionSearchField: PlainSearchField { searchBar.searchField }
     private let shortcutRecorder = ShortcutRecorderControl()
     private let keyPicker = StyledPopUpButton(frame: .zero, pullsDown: false)
     private let textEditor = NSTextView()
@@ -222,23 +222,12 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         actionLabel.frame = NSRect(x: 440, y: 198, width: 320, height: 16)
         addSubview(actionLabel)
 
-        searchPill.fill = SettingsTheme.subtleFill
-        searchPill.border = SettingsTheme.line
-        searchPill.radius = 8
-        searchPill.frame = NSRect(x: 806, y: 192, width: 192, height: 26)
-        addSubview(searchPill)
-
-        actionSearchField.placeholderString = L("搜索动作…")
-        actionSearchField.font = .systemFont(ofSize: 11.5)
-        actionSearchField.isBordered = false
-        actionSearchField.drawsBackground = false
-        actionSearchField.focusRingType = .none
-        actionSearchField.sendsSearchStringImmediately = true
+        searchBar.frame = NSRect(x: 802, y: 191, width: 196, height: 28)
+        actionSearchField.setStyledPlaceholder(L("搜索动作…"))
         actionSearchField.target = self
         actionSearchField.action = #selector(searchFilterChanged)
         actionSearchField.setAccessibilityLabel(L("搜索按键动作"))
-        actionSearchField.frame = NSRect(x: 814, y: 195, width: 178, height: 20)
-        addSubview(actionSearchField)
+        addSubview(searchBar)
 
         actionPicker.autoenablesItems = false
         var group = ""
@@ -626,8 +615,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         triggerPicker.isHidden = voice
         actionLabel.isHidden = voice
         actionPicker.isHidden = voice
-        searchPill.isHidden = voice || reservedToggle
-        actionSearchField.isHidden = voice || reservedToggle
+        searchBar.isHidden = voice || reservedToggle
         hintPanel.isHidden = voice
         hint.isHidden = voice
         saveButton.isHidden = voice

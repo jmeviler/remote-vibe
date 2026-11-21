@@ -318,6 +318,197 @@ final class StyledSegmentedControl: NSSegmentedControl {
     }
 }
 
+private final class PlainSearchFieldCell: NSTextFieldCell {
+    override init(textCell string: String) {
+        super.init(textCell: string)
+        configureCell()
+    }
+
+    required init(coder: NSCoder) {
+        super.init(coder: coder)
+        configureCell()
+    }
+
+    private func configureCell() {
+        isEditable = true
+        isSelectable = true
+        isBordered = false
+        isBezeled = false
+        drawsBackground = false
+        focusRingType = .none
+        usesSingleLineMode = true
+        wraps = false
+        isScrollable = true
+        lineBreakMode = .byTruncatingTail
+    }
+
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
+        (textObj as? NSTextView)?.insertionPointColor = SettingsTheme.forest
+        super.edit(withFrame: rect, in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
+        (textObj as? NSTextView)?.insertionPointColor = SettingsTheme.forest
+        super.select(withFrame: rect, in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
+    }
+}
+
+final class PlainSearchField: NSTextField {
+    override class var cellClass: AnyClass? {
+        get { PlainSearchFieldCell.self }
+        set {}
+    }
+
+    var onStateChange: (() -> Void)?
+
+    override var stringValue: String {
+        didSet { onStateChange?() }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        if !(cell is PlainSearchFieldCell) {
+            cell = PlainSearchFieldCell(textCell: "")
+        }
+        isEditable = true
+        isSelectable = true
+        isBordered = false
+        isBezeled = false
+        drawsBackground = false
+        focusRingType = .none
+        usesSingleLineMode = true
+        font = .systemFont(ofSize: 12)
+        textColor = SettingsTheme.ink
+        setAccessibilityRole(.textField)
+        setAccessibilitySubrole(.searchField)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func setStyledPlaceholder(_ text: String) {
+        let resolvedFont = font ?? .systemFont(ofSize: 12)
+        placeholderAttributedString = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: resolvedFont,
+                .foregroundColor: SettingsTheme.placeholder
+            ]
+        )
+    }
+
+    override func didAddSubview(_ subview: NSView) {
+        super.didAddSubview(subview)
+        onStateChange?()
+    }
+
+    override func willRemoveSubview(_ subview: NSView) {
+        super.willRemoveSubview(subview)
+        DispatchQueue.main.async { [weak self] in self?.onStateChange?() }
+    }
+
+    override func textDidChange(_ notification: Notification) {
+        super.textDidChange(notification)
+        if let action {
+            NSApp.sendAction(action, to: target, from: self)
+        }
+        onStateChange?()
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        if !stringValue.isEmpty {
+            stringValue = ""
+            if let action { NSApp.sendAction(action, to: target, from: self) }
+            onStateChange?()
+        } else {
+            window?.makeFirstResponder(nil)
+        }
+    }
+}
+
+final class ActionSearchBar: NSView {
+    let searchField = PlainSearchField(frame: .zero)
+    override var isFlipped: Bool { true }
+
+    var isEditingSearch: Bool {
+        guard let window else { return false }
+        if window.firstResponder === searchField { return true }
+        if let editor = searchField.currentEditor(), window.firstResponder === editor { return true }
+        return false
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        addSubview(searchField)
+        relayoutField()
+        searchField.onStateChange = { [weak self] in
+            self?.relayoutField()
+            self?.needsDisplay = true
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private func relayoutField() {
+        let leftInset: CGFloat = 28
+        let rightInset: CGFloat = searchField.stringValue.isEmpty ? 8 : 25
+        let resolvedFont = searchField.font ?? .systemFont(ofSize: 12)
+        let fieldHeight = min(bounds.height, ceil(("Ag搜" as NSString).size(withAttributes: [.font: resolvedFont]).height) + 1)
+        let y = max(0, floor(bounds.height - fieldHeight) / 2)
+        searchField.frame = NSRect(
+            x: leftInset,
+            y: y,
+            width: max(24, bounds.width - leftInset - rightInset),
+            height: fieldHeight
+        )
+    }
+
+    override func resizeSubviews(withOldSize oldSize: NSSize) {
+        relayoutField()
+    }
+
+    override func layout() {
+        super.layout()
+        relayoutField()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if !searchField.stringValue.isEmpty && point.x >= bounds.width - 25 {
+            searchField.stringValue = ""
+            if let action = searchField.action {
+                NSApp.sendAction(action, to: searchField.target, from: searchField)
+            }
+            window?.makeFirstResponder(searchField)
+            needsLayout = true
+            needsDisplay = true
+            return
+        }
+        window?.makeFirstResponder(searchField)
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let focused = isEditingSearch
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let radius: CGFloat = 9
+        let pill = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+        (focused ? SettingsTheme.paper : SettingsTheme.subtleFill).setFill()
+        pill.fill()
+        (focused ? SettingsTheme.forest : SettingsTheme.line).setStroke()
+        pill.lineWidth = focused ? 1.5 : 1
+        pill.stroke()
+
+        let iconSize: CGFloat = 13
+        let iconRect = NSRect(x: 10, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize)
+        SettingsTheme.symbol("magnifyingglass", in: iconRect, muted: !focused)
+
+        if !searchField.stringValue.isEmpty {
+            let clearRect = NSRect(x: bounds.width - iconSize - 8, y: (bounds.height - iconSize) / 2, width: iconSize, height: iconSize)
+            SettingsTheme.symbol("xmark.circle.fill", in: clearRect, muted: true)
+        }
+    }
+}
+
 enum SettingsTheme {
     static func color(_ hex: UInt32) -> NSColor {
         NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255, green: CGFloat((hex >> 8) & 255) / 255,
@@ -336,6 +527,7 @@ enum SettingsTheme {
     static let subtleFill = adaptive(light: 0xEAECE5, dark: 0x242E28)
     static let ink = adaptive(light: 0x202923, dark: 0xECF1EC)
     static let secondary = adaptive(light: 0x626E65, dark: 0x99A89C)
+    static let placeholder = adaptive(light: 0x7D887F, dark: 0x829186)
     static let line = adaptive(light: 0xDFE3DA, dark: 0x2E3A32)
     static let forest = adaptive(light: 0x344936, dark: 0x456949)
     static let stage = adaptive(light: 0x202B25, dark: 0x17201B)

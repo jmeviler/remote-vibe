@@ -96,6 +96,15 @@ enum DesignPreview {
             try capture(shell, name: profile.rawValue + "-wide", directory: directory)
             resize(1080)
             let controls = descendants(view)
+            let searchField = controls.compactMap { $0 as? PlainSearchField }.first!
+            precondition(window.makeFirstResponder(searchField), "Search field must accept keyboard focus")
+            try capture(shell, name: profile.rawValue + "-search-focused", directory: directory)
+            searchField.stringValue = "复制"
+            change(searchField)
+            try capture(shell, name: profile.rawValue + "-search-typed", directory: directory)
+            searchField.stringValue = ""
+            change(searchField)
+            window.makeFirstResponder(nil)
             let triggers = controls.compactMap { $0 as? NSSegmentedControl }.first { $0.action == NSSelectorFromString("triggerChanged") }!
             let actions = controls.compactMap { $0 as? NSPopUpButton }.first { $0.action == NSSelectorFromString("actionChanged") }!
             func choose(_ title: String) { actions.selectItem(withTitle: title); change(actions) }

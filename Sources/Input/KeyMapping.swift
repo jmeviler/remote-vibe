@@ -212,7 +212,7 @@ struct MappedButton {
     static let chromecast: [MappedButton] = [
         .init(code: 3, name: L("方向上"), usage: 0x42), .init(code: 4, name: L("方向下"), usage: 0x43),
         .init(code: 5, name: L("方向左"), usage: 0x44), .init(code: 6, name: L("方向右"), usage: 0x45),
-        .init(code: 7, name: L("中央确认"), usage: 0x41), .init(code: 11, name: L("返回箭头"), usage: 0x224),
+        .init(code: 7, name: L("中央确认"), usage: 0x41), .init(code: 11, name: L("返回"), usage: 0x224),
         .init(code: 10, name: L("主页"), usage: 0x223), .init(code: 8, name: L("静音"), usage: 0xE2),
         .init(code: 14, name: "YouTube", usage: 0x77), .init(code: 15, name: "Netflix", usage: 0x78),
         .init(code: 1, name: L("电源"), usage: 0x19E), .init(code: 17, name: L("信源"), usage: 0x89),
@@ -312,7 +312,7 @@ final class KeyMapping {
     private(set) var configurationNotice: String?
     private(set) var profile: RemoteProfile
     var buttons: [MappedButton] { MappedButton.buttons(for: profile) }
-    private(set) var status = L("等待遥控器连接")
+    private(set) var status = L("默认键位 · 连接遥控器后自动生效")
     private(set) var connected = false
     private(set) var needsApply = false
     private var listenerOK = false
@@ -501,10 +501,12 @@ final class KeyMapping {
         if !fnButtons.isSubset(of: activeShortcuts) { releaseMappedFn() }
         if let voiceButton, !activeShortcuts.contains(voiceButton) { releaseMappedVoice(normal: false) }
         snapshots = snapshots.filter { present.contains($0.key) }
-        status = !connected ? L("设置已保存 · 等待遥控器连接") : !applied ? L("按键设置未能生效，请检查权限") :
+        let hasSavedBindings = !bindings.isEmpty || !mouseBindings.isEmpty
+        status = !connected ? (hasSavedBindings ? L("已保存键位 · 连接遥控器后自动生效") : L("默认键位 · 连接遥控器后自动生效")) :
+            !applied ? L("按键设置未能生效，请检查权限") :
             needsApply ? L("按键设置被其他程序更改 · 保存可重新应用") :
             hasCustomActions && !listenerOK ? L("自定义动作需要输入监控及辅助功能权限") :
-            mouseMode.active ? L("鼠标模式已开启 · 再按切换键退出") : L("按键已生效 · 重连后自动恢复")
+            mouseMode.active ? L("鼠标模式已开启 · 再按切换键退出") : L("当前键位已生效 · 重连后自动恢复")
         if connected && applied && !needsApply && (!needsListener || listenerOK),
            let feedback = actionFeedback, feedback.until > Date() { status = feedback.text }
         if disconnected { onInputReset?() }

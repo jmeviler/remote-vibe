@@ -12,10 +12,10 @@ final class VoiceStudioView: SettingsPage {
     private let presetHintLabel = NSTextField(wrappingLabelWithString: "")
     private let customModeControl = StyledSegmentedControl()
     private let customRecorder = ShortcutRecorderControl()
-    private let switchMicCheckbox = NSButton(checkboxWithTitle: L("说话时自动切换系统麦克风（推荐）"), target: nil, action: nil)
-    private let switchMicDetail = NSTextField(wrappingLabelWithString: L("蓝牙耳机通话中若不想切换音源，可在微信中将麦克风固定为 Chromecast Mic 后关闭。"))
+    private let switchMicCheckbox = NSButton(checkboxWithTitle: L("说话时自动切换系统默认麦克风（推荐）"), target: nil, action: nil)
+    private let switchMicDetail = NSTextField(wrappingLabelWithString: L("关闭后不再改动系统默认麦克风（适合戴蓝牙耳机开会防切麦，需在语音软件内手动选定 Chromecast Mic）。"))
     private let fastCheckbox = NSButton(checkboxWithTitle: L("快速连说模式"), target: nil, action: nil)
-    private let fastDetail = NSTextField(wrappingLabelWithString: L("缩短每句话前后的缓冲等待，连续说话更跟手；若偶发漏掉首字可关闭。"))
+    private let fastDetail = NSTextField(wrappingLabelWithString: L("缩短松手后的等待时间，一句接一句说更快；若每句开头偶尔吞字，请关闭此项。"))
 
     private var customMode: VoiceTriggerMode = .hold
     private var customUsage: UInt64 = 0x2C
@@ -46,9 +46,9 @@ final class VoiceStudioView: SettingsPage {
 
         presetPopup.addItems(withTitles: [
             L("微信全局语音输入（按住 Fn）"),
-            L("按住右 Option 说话（豆包 / Whisper 等）"),
-            L("点按 Option + Space 开始或结束（系统听写）"),
-            L("仅作为麦克风收音（不发快捷键）"),
+            L("豆包 / Superwhisper 等（按住右 Option）"),
+            L("系统听写等开关模式（点按 Option + Space）"),
+            L("仅作麦克风收音（不发快捷键）"),
             L("自定义语音触发快捷键…")
         ])
         presetPopup.font = .systemFont(ofSize: 13.5, weight: .medium)
@@ -89,7 +89,7 @@ final class VoiceStudioView: SettingsPage {
         }
         addSubview(customRecorder)
 
-        let optionsHeader = SettingsTheme.eyebrow(L("通话与连说选项"))
+        let optionsHeader = SettingsTheme.eyebrow(L("麦克风与连说设置"))
         optionsHeader.frame = NSRect(x: 0, y: 270, width: 558, height: 16)
         addSubview(optionsHeader)
 
@@ -131,11 +131,11 @@ final class VoiceStudioView: SettingsPage {
         meterView.level = active ? level : 0
         if active {
             meterStatusLabel.stringValue = testingOnly ?
-                L("正在试音 · 遥控器收音正常（切回输入框即可说话打字）") :
-                L("正在说话 · 遥控器收音正常")
+                L("收音正常 · 切到其他软件的输入框再按住即可语音打字") :
+                L("正在收音 · 松开语音键结束")
             meterStatusLabel.textColor = SettingsTheme.accentDot
         } else {
-            meterStatusLabel.stringValue = L("按住遥控器语音键试音，下方实时显示收音音量")
+            meterStatusLabel.stringValue = L("按住遥控器语音键说话，可在此测试麦克风收音")
             meterStatusLabel.textColor = SettingsTheme.ink
         }
     }
@@ -179,13 +179,13 @@ final class VoiceStudioView: SettingsPage {
             customRecorder.stopRecording()
             switch settings.trigger.normalized {
             case .holdFn:
-                presetHintLabel.stringValue = L("保持微信后台运行并开启「长按 Fn 全局语音输入」，点击任意输入框后按住语音键即可打字。")
+                presetHintLabel.stringValue = L("需保持 Mac 微信在后台运行并开启「长按 Fn 全局语音输入」。若按住说话不出字，可点右下角「微信语音指南」排查。")
             case .holdRightOption:
-                presetHintLabel.stringValue = L("说话期间自动按住右 Option，松手自动释放，适合豆包桌面端、Superwhisper 等工具。")
+                presetHintLabel.stringValue = L("说话期间自动按住键盘右 Option，松手自动松开；请将豆包桌面端、Superwhisper 等软件的语音键也设为右 Option。")
             case .tapOptionSpace:
-                presetHintLabel.stringValue = L("开麦时点按一次 ⌥Space 启动，松手排空尾音后再点按一次 ⌥Space 结束。")
+                presetHintLabel.stringValue = L("按下语音键时点按一次 ⌥Space 开始听写，松手录完尾音后再点按一次 ⌥Space 结束。")
             case .audioOnly:
-                presetHintLabel.stringValue = L("仅将遥控器声音送入 Chromecast Mic 虚拟麦克风，不发送任何键盘快捷键。")
+                presetHintLabel.stringValue = L("只把遥控器声音送入 Chromecast Mic 虚拟麦克风，不发送任何按键（适合会议通话或录音，无需辅助功能权限）。")
             case .custom:
                 break
             }

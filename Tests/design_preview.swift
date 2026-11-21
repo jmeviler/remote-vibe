@@ -68,12 +68,12 @@ enum DesignPreview {
             let permsBtn = SettingsTheme.secondaryButton(L("权限设置"))
             let shell = SettingsView(mapping: view, unlock: combo, remote: remote,
                 discovery: discoveryBtn, pages: tabs,
-                connection: NSTextField(wrappingLabelWithString: L("%@：遥控器已连接", "Google")),
+                connection: NSTextField(wrappingLabelWithString: L("%@：遥控器已连接", profile.title)),
                 audio: NSTextField(wrappingLabelWithString: L("语音组件：已就绪")),
                 permission: NSTextField(wrappingLabelWithString: L("系统权限：已全部开启")),
                 permissionsButton: permsBtn,
-                message: NSTextField(wrappingLabelWithString: L("在左侧点选按键，或直接按手里的遥控器即可修改配置。")),
-                readiness: NSTextField(labelWithString: L("已就绪 · 在任意输入框按住遥控器语音键即可说话")),
+                message: NSTextField(wrappingLabelWithString: L("关闭此窗口后，Remote Vibe 仍会在菜单栏后台运行。")),
+                readiness: NSTextField(labelWithString: L("已就绪 · 点击任意输入框，按住遥控器语音键即可说话")),
                 wechatButton: SettingsTheme.secondaryButton(L("微信语音指南")))
             shell.appearance = NSAppearance(named: .aqua)
             let window = NSWindow(contentRect: shell.bounds, styleMask: [.titled, .resizable], backing: .buffered, defer: false)

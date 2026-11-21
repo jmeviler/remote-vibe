@@ -319,8 +319,6 @@ final class StyledSegmentedControl: NSSegmentedControl {
 }
 
 private final class PlainSearchFieldCell: NSSearchFieldCell {
-    private var adjustingEditor = false
-
     override init(textCell string: String) {
         super.init(textCell: string)
         configureCell()
@@ -344,42 +342,18 @@ private final class PlainSearchFieldCell: NSSearchFieldCell {
         lineBreakMode = .byTruncatingTail
     }
 
-    private func textRect(for bounds: NSRect) -> NSRect {
-        let resolvedFont = font ?? NSFont.systemFont(ofSize: 12)
-        let lineHeight = ceil(("Ag搜" as NSString).size(withAttributes: [.font: resolvedFont]).height)
-        let y = bounds.minY + max(0, floor((bounds.height - lineHeight) * 2) / 2)
-        return NSRect(x: bounds.minX, y: y, width: max(12, bounds.width - 2), height: min(bounds.height, lineHeight))
-    }
-
     override func searchButtonRect(forBounds rect: NSRect) -> NSRect { .zero }
     override func cancelButtonRect(forBounds rect: NSRect) -> NSRect { .zero }
-
-    override func drawingRect(forBounds theRect: NSRect) -> NSRect {
-        adjustingEditor ? theRect : textRect(for: theRect)
-    }
-
-    override func titleRect(forBounds theRect: NSRect) -> NSRect {
-        adjustingEditor ? theRect : textRect(for: theRect)
-    }
-
-    override func searchTextRect(forBounds rect: NSRect) -> NSRect {
-        adjustingEditor ? rect : textRect(for: rect)
-    }
+    override func searchTextRect(forBounds rect: NSRect) -> NSRect { rect }
 
     override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
-        let target = textRect(for: rect)
         (textObj as? NSTextView)?.insertionPointColor = SettingsTheme.forest
-        adjustingEditor = true
-        super.edit(withFrame: target, in: controlView, editor: textObj, delegate: delegate, event: event)
-        adjustingEditor = false
+        super.edit(withFrame: rect, in: controlView, editor: textObj, delegate: delegate, event: event)
     }
 
     override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
-        let target = textRect(for: rect)
         (textObj as? NSTextView)?.insertionPointColor = SettingsTheme.forest
-        adjustingEditor = true
-        super.select(withFrame: target, in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
-        adjustingEditor = false
+        super.select(withFrame: rect, in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
     }
 }
 
@@ -474,11 +448,14 @@ final class ActionSearchBar: NSView {
         super.layout()
         let leftInset: CGFloat = 27
         let rightInset: CGFloat = searchField.stringValue.isEmpty ? 8 : 25
+        let resolvedFont = searchField.font ?? .systemFont(ofSize: 12)
+        let fieldHeight = min(bounds.height, ceil(("Ag搜" as NSString).size(withAttributes: [.font: resolvedFont]).height) + 1)
+        let y = floor((bounds.height - fieldHeight) * 2) / 2
         searchField.frame = NSRect(
             x: leftInset,
-            y: 0,
+            y: y,
             width: max(24, bounds.width - leftInset - rightInset),
-            height: bounds.height
+            height: fieldHeight
         )
     }
 

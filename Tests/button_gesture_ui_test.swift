@@ -258,7 +258,6 @@ enum ButtonGestureUITest {
         precondition(window.makeFirstResponder(search), "Action search field must accept focus")
         if let editor = search.currentEditor(), let clip = editor.superview {
             let clipRect = searchBar.convert(clip.frame, from: clip.superview)
-            print("Search geometry: bar=\(searchBar.bounds) field=\(search.frame) clip=\(clipRect) editorFrame=\(editor.frame)")
             precondition(clipRect.minX >= 26, "Focused field editor clip view overlapped magnifying glass: \(clipRect)")
             precondition(abs(clipRect.midY - searchBar.bounds.midY) <= 2, "Focused field editor clip view vertically misaligned: \(clipRect) in \(searchBar.bounds)")
         }

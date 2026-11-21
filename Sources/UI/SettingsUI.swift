@@ -453,7 +453,7 @@ final class ActionSearchBar: NSView {
         let rightInset: CGFloat = searchField.stringValue.isEmpty ? 8 : 25
         let resolvedFont = searchField.font ?? .systemFont(ofSize: 12)
         let fieldHeight = min(bounds.height, ceil(("Ag搜" as NSString).size(withAttributes: [.font: resolvedFont]).height) + 1)
-        let y = max(0, floor((bounds.height - fieldHeight) * 2) / 2)
+        let y = max(0, floor(bounds.height - fieldHeight) / 2)
         searchField.frame = NSRect(
             x: leftInset,
             y: y,

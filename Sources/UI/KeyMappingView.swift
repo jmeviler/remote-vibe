@@ -348,7 +348,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         liveStatus.lineBreakMode = .byTruncatingTail
         place(liveStatus, y: 534, h: 17)
 
-        voiceStudio.frame = NSRect(x: 440, y: 122, width: 558, height: 420)
+        voiceStudio.frame = NSRect(x: 440, y: 122, width: 558, height: 428)
         voiceStudio.onSettingsChange = { [weak self] in
             guard let self else { return }
             if self.selected == 0 {

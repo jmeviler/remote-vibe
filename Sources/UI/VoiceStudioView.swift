@@ -24,7 +24,7 @@ final class VoiceStudioView: SettingsPage {
 
     init(settings: VoiceInputSettings) {
         self.settings = settings
-        super.init(frame: NSRect(x: 0, y: 0, width: 558, height: 420))
+        super.init(frame: NSRect(x: 0, y: 0, width: 558, height: 428))
 
         meterCard.fill = SettingsTheme.subtleFill
         meterCard.border = SettingsTheme.line
@@ -90,29 +90,29 @@ final class VoiceStudioView: SettingsPage {
         addSubview(customRecorder)
 
         let optionsHeader = SettingsTheme.eyebrow(L("麦克风与连说设置"))
-        optionsHeader.frame = NSRect(x: 0, y: 270, width: 558, height: 16)
+        optionsHeader.frame = NSRect(x: 0, y: 266, width: 558, height: 16)
         addSubview(optionsHeader)
 
         switchMicCheckbox.font = .systemFont(ofSize: 13, weight: .medium)
         switchMicCheckbox.target = self
         switchMicCheckbox.action = #selector(switchMicChanged)
-        switchMicCheckbox.frame = NSRect(x: 0, y: 295, width: 558, height: 22)
+        switchMicCheckbox.frame = NSRect(x: 0, y: 290, width: 558, height: 22)
         addSubview(switchMicCheckbox)
 
         switchMicDetail.font = .systemFont(ofSize: 11.5)
         switchMicDetail.textColor = SettingsTheme.secondary
-        switchMicDetail.frame = NSRect(x: 22, y: 319, width: 536, height: 26)
+        switchMicDetail.frame = NSRect(x: 22, y: 314, width: 536, height: 38)
         addSubview(switchMicDetail)
 
         fastCheckbox.font = .systemFont(ofSize: 13, weight: .medium)
         fastCheckbox.target = self
         fastCheckbox.action = #selector(fastChanged)
-        fastCheckbox.frame = NSRect(x: 0, y: 354, width: 558, height: 22)
+        fastCheckbox.frame = NSRect(x: 0, y: 360, width: 558, height: 22)
         addSubview(fastCheckbox)
 
         fastDetail.font = .systemFont(ofSize: 11.5)
         fastDetail.textColor = SettingsTheme.secondary
-        fastDetail.frame = NSRect(x: 22, y: 378, width: 536, height: 26)
+        fastDetail.frame = NSRect(x: 22, y: 384, width: 536, height: 38)
         addSubview(fastDetail)
 
         captureHorizontalLayout()

@@ -251,6 +251,16 @@ enum ButtonGestureUITest {
         precondition(view.hasUnsavedChanges)
 
         let search = all.compactMap { $0 as? NSSearchField }.first!
+        view.layoutSubtreeIfNeeded()
+        let searchBar = search.superview!
+        precondition(search.frame.minX >= 26, "Search text area must never overlap the leading magnifying glass icon")
+        precondition(window.makeFirstResponder(search), "Action search field must accept focus")
+        if let editor = search.currentEditor() {
+            let editorRect = searchBar.convert(editor.bounds, from: editor)
+            precondition(editorRect.minX >= 26, "Focused field editor overlapped the magnifying glass icon: \(editorRect)")
+            precondition(abs(editorRect.midY - searchBar.bounds.midY) <= 2, "Focused field editor vertically misaligned: \(editorRect) in \(searchBar.bounds)")
+        }
+        window.makeFirstResponder(nil)
         search.stringValue = "⌘C"
         change(search)
         let copyItem = action.itemArray.first { !$0.isSectionHeader && $0.title == L("复制 · ⌘C") }!

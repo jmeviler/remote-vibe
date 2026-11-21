@@ -8,7 +8,7 @@
 
 https://github.com/user-attachments/assets/ec4ab9ff-594f-49b3-9f1f-0f4ecc002a6f
 
-40 秒 60fps 宣传片（含 BGM 与交互音效），视频原文件也保存在 [Docs/Images/remote-vibe-promo.mp4](Docs/Images/remote-vibe-promo.mp4)。
+40 秒 60fps 演示，带 BGM 和交互音效，建议开声音看。
 
 ## 能做什么
 
@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/ec4ab9ff-594f-49b3-9f1f-0f4ecc002a6f
 
 ## 界面
 
-下面是 **v0.6.1** 的实际界面（隔离示例配置）：
+**v0.6.1** 实际界面：
 
 | 语音工作台（深色模式） | 实时搜索动作（Google Chromecast） |
 | --- | --- |

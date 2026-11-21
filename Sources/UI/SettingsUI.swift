@@ -487,6 +487,7 @@ final class RemoteStage: SettingsPanel {
 final class ActionPreview: SettingsPanel {
     var binding: ButtonAction? { didSet { needsDisplay = true } }
     var voice = false { didSet { needsDisplay = true } }
+    var hasGestures = false { didSet { needsDisplay = true } }
     override func draw(_ dirtyRect: NSRect) {
         fill = SettingsTheme.subtleFill; border = nil; radius = 12
         super.draw(dirtyRect)
@@ -510,24 +511,32 @@ final class ActionPreview: SettingsPanel {
                 (key as NSString).draw(at: NSPoint(x: x + (width - size.width) / 2, y: 16 + (48 - size.height) / 2), withAttributes: attrs)
                 x += width + 8
             }
-            text(binding.isFn ? L("仅模拟 Fn · 使用目标软件选择的麦克风") : L("发送到当前应用"), at: NSPoint(x: 18, y: 80), size: 11, color: SettingsTheme.secondary)
+            let caption: String
+            if binding.isFn {
+                caption = L("仅按住键盘 Fn 键 · 不开启遥控器麦克风")
+            } else if !hasGestures && !binding.usesListener {
+                caption = L("系统级改键 · 直接发给当前软件（免额外权限）")
+            } else {
+                caption = L("向当前软件发送按键 · 按一次触发一次")
+            }
+            text(caption, at: NSPoint(x: 18, y: 80), size: 11, color: SettingsTheme.secondary)
         } else {
             let symbol: String
             let title: String
             let detail: String
-            if voice { symbol = "waveform"; title = L("按住说话，松开结束。"); detail = L("使用遥控器自带麦克风") }
-            else if binding == nil { symbol = "plus"; title = L("为这个手势，留一个位置。"); detail = L("从上方菜单选择一个动作") }
+            if voice { symbol = "waveform"; title = L("按住开启遥控器麦克风"); detail = L("松手结束收音，输入方式跟随「语音键」设置") }
+            else if binding == nil { symbol = "plus"; title = L("未绑定动作"); detail = L("从上方「执行动作」菜单选择，或保持为空") }
             else {
                 switch binding!.kind {
-                case .toggleMouseMode: symbol = "cursorarrow"; title = binding!.title; detail = L("按一次进入，再按一次退出")
-                case .mouseUp, .mouseDown, .mouseLeft, .mouseRight: symbol = "cursorarrow.motionlines"; title = binding!.title; detail = L("按住持续移动，松开停止")
-                case .mouseLeftClick, .mouseRightClick: symbol = "computermouse"; title = binding!.title; detail = L("在当前指针位置点击一次")
-                case .disabled: symbol = "pause.circle"; title = L("不执行动作"); detail = L("识别这个手势，但不触发操作")
-                case .nextDisplay: symbol = "display.2"; title = L("切换到下一块屏幕"); detail = L("聚焦可见窗口，鼠标随之移入")
-                case .nextWindow: symbol = "macwindow.on.rectangle"; title = L("在窗口之间，轻松流转。"); detail = L("循环切换当前屏幕的可见窗口")
-                case .systemKey: symbol = "slider.horizontal.3"; title = binding!.title; detail = L("交给系统、显示器或媒体应用响应")
-                case .scrollUp, .scrollDown, .scrollLeft, .scrollRight: symbol = "scroll"; title = binding!.title; detail = L("作用于鼠标所在位置")
-                default: symbol = "arrow.turn.up.right"; title = L("保留原按键功能"); detail = L("继续使用系统对这个按键的默认处理")
+                case .toggleMouseMode: symbol = "cursorarrow"; title = binding!.title; detail = L("按一次进入鼠标控制，再按一次恢复普通键位")
+                case .mouseUp, .mouseDown, .mouseLeft, .mouseRight: symbol = "cursorarrow.motionlines"; title = binding!.title; detail = L("按住连续移动指针并加速，松手即停")
+                case .mouseLeftClick, .mouseRightClick: symbol = "computermouse"; title = binding!.title; detail = L("在当前鼠标位置点击一次")
+                case .disabled: symbol = "pause.circle"; title = L("屏蔽此按键"); detail = L("按下不产生任何操作，适合防误触或只用双击/长按")
+                case .nextDisplay: symbol = "display.2"; title = L("切换到下一块屏幕"); detail = L("激活另一块屏幕上的窗口，并将鼠标移过去")
+                case .nextWindow: symbol = "macwindow.on.rectangle"; title = L("切换当前屏幕窗口"); detail = L("在当前屏幕已打开的窗口间依次切换，跳过最小化窗口")
+                case .systemKey: symbol = "slider.horizontal.3"; title = binding!.title; detail = L("触发 macOS 系统音量、亮度或媒体播放键")
+                case .scrollUp, .scrollDown, .scrollLeft, .scrollRight: symbol = "scroll"; title = binding!.title; detail = L("滚动鼠标指针所在位置的内容，按住可连续滚动")
+                default: symbol = "arrow.turn.up.right"; title = L("保留原按键功能"); detail = L("不改绑，保持 macOS 对该按键的默认响应")
                 }
             }
             let disc = NSBezierPath(roundedRect: NSRect(x: 18, y: 26, width: 52, height: 52), xRadius: 15, yRadius: 15)
@@ -551,8 +560,8 @@ final class SettingsView: SettingsPage {
         func place(_ view: NSView, _ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ height: CGFloat) {
             view.frame = NSRect(x: x, y: y, width: width, height: height); addSubview(view)
         }
-        place(SettingsTheme.eyebrow(L("Remote Vibe · 遥控语音与快捷键")), 30, 23, 380, 16)
-        place(SettingsTheme.label(L("把习惯，放进按键。"), size: 28, weight: .semibold, color: SettingsTheme.ink), 28, 46, 460, 40)
+        place(SettingsTheme.eyebrow("Remote Vibe"), 30, 23, 380, 16)
+        place(SettingsTheme.label(L("遥控器设置"), size: 28, weight: .semibold, color: SettingsTheme.ink), 28, 46, 460, 40)
         place(readinessDot, 30, 96, 10, 10)
         readiness.font = .systemFont(ofSize: 12, weight: .medium)
         readiness.maximumNumberOfLines = 1

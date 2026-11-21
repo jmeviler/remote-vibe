@@ -29,54 +29,60 @@ final class ComboUnlockView: SettingsPage {
         let surface = SettingsPanel(frame: NSRect(x: 304, y: 0, width: 720, height: 574))
         addSubview(surface)
         let eyebrow = SettingsTheme.eyebrow(L("锁屏快捷解锁"), light: true)
-        place(eyebrow, x: 24, y: 24, w: 240, h: 17)
-        let heading = SettingsTheme.label(L("把连招，\n变成钥匙。"), size: 30, weight: .semibold, color: SettingsTheme.color(0xF1F5E9))
+        place(eyebrow, x: 24, y: 24, w: 238, h: 17)
+        let heading = SettingsTheme.label(L("按预设连招，\n解锁这台 Mac"), size: 26, weight: .semibold, color: SettingsTheme.color(0xF1F5E9))
         heading.maximumNumberOfLines = 2
-        place(heading, x: 23, y: 74, w: 240, h: 90)
-        let subtitle = SettingsTheme.label(L("为熟悉的动作，赋予新的意义。"), size: 12, color: SettingsTheme.color(0xAFBFAB))
-        place(subtitle, x: 25, y: 182, w: 238, h: 22)
-        for (index, pair) in [(L("录制"), L("输入 8–16 次按键，并重复确认。")), (L("验证"), L("在本机锁屏界面完成手动测试。")), (L("开启"), L("验证成功后，由你决定是否启用。"))].enumerated() {
-            let y = CGFloat(254 + index * 82)
+        place(heading, x: 23, y: 58, w: 240, h: 80)
+        let subtitle = NSTextField(wrappingLabelWithString: L("锁屏时在遥控器上按对顺序，自动代填密码并解锁。"))
+        subtitle.font = .systemFont(ofSize: 12)
+        subtitle.textColor = SettingsTheme.color(0xAFBFAB)
+        place(subtitle, x: 24, y: 148, w: 238, h: 38)
+        for (index, pair) in [
+            (L("录入连招"), L("除语音和电源键外，按 8–16 下并重复一遍。")),
+            (L("保存密码"), L("加密存入本机钥匙串，不写入普通配置文件。")),
+            (L("锁屏验证"), L("锁屏试填 1 个测试字符，确认可用后再开启。"))
+        ].enumerated() {
+            let y = CGFloat(224 + index * 92)
             place(SettingsTheme.eyebrow("0\(index + 1)", light: true), x: 25, y: y, w: 30, h: 18)
             place(SettingsTheme.label(pair.0, size: 15, weight: .medium, color: SettingsTheme.paper), x: 63, y: y - 2, w: 180, h: 23)
             let description = NSTextField(wrappingLabelWithString: pair.1)
             description.font = .systemFont(ofSize: 11); description.textColor = SettingsTheme.color(0xBBC8B7)
-            place(description, x: 63, y: y + 29, w: 195, h: 30)
+            place(description, x: 63, y: y + 27, w: 198, h: 38)
         }
-        place(SettingsTheme.eyebrow(L("仅保存在本机钥匙串"), light: true), x: 24, y: 536, w: 240, h: 18)
+        place(SettingsTheme.eyebrow(L("仅支持登录后的锁屏 · 开机仍需手输"), light: true), x: 24, y: 534, w: 238, h: 18)
         let title = SettingsTheme.label(L("连招解锁"), size: 26, weight: .semibold, color: SettingsTheme.ink)
         place(title, x: 332, y: 25, w: 660, h: 37)
         summary.font = .systemFont(ofSize: 12, weight: .medium); summary.textColor = SettingsTheme.secondary
-        place(summary, x: 332, y: 75, w: 660, h: 23)
-        let explanation = NSTextField(wrappingLabelWithString: L("语音与电源键不参与。相邻按键间隔不超过 3 秒，长按只计一次。"))
+        place(summary, x: 332, y: 74, w: 660, h: 23)
+        let explanation = NSTextField(wrappingLabelWithString: L("除语音键和电源键外均可参与；相邻两下间隔不超过 3 秒，长按只算一下。"))
         explanation.font = .systemFont(ofSize: 12); explanation.textColor = SettingsTheme.secondary
-        place(explanation, x: 332, y: 112, w: 660, h: 34)
-        setup(record, action: #selector(recordPressed), x: 330, y: 158, w: 128)
-        setup(finish, action: #selector(finishPressed), x: 464, y: 158, w: 119)
-        setup(practice, action: #selector(practicePressed), x: 589, y: 158, w: 83)
-        setup(cancel, action: #selector(cancelPressed), x: 678, y: 158, w: 130)
-        setup(permissions, action: #selector(permissionsPressed), x: 814, y: 158, w: 184)
+        place(explanation, x: 332, y: 110, w: 660, h: 34)
+        setup(record, action: #selector(recordPressed), x: 330, y: 156, w: 128)
+        setup(finish, action: #selector(finishPressed), x: 464, y: 156, w: 119)
+        setup(practice, action: #selector(practicePressed), x: 589, y: 156, w: 83)
+        setup(cancel, action: #selector(cancelPressed), x: 678, y: 156, w: 130)
+        setup(permissions, action: #selector(permissionsPressed), x: 814, y: 156, w: 184)
         progress.textColor = SettingsTheme.secondary; progress.font = .systemFont(ofSize: 12)
-        place(progress, x: 332, y: 207, w: 660, h: 44)
-        place(SettingsTheme.eyebrow(L("本机登录密码")), x: 332, y: 266, w: 200, h: 18)
-        password.placeholderString = L("仅保存到本机钥匙串")
+        place(progress, x: 332, y: 205, w: 660, h: 44)
+        place(SettingsTheme.eyebrow(L("本机登录密码")), x: 332, y: 264, w: 200, h: 18)
+        password.placeholderString = L("输入这台 Mac 的登录密码")
         password.setAccessibilityLabel(L("本机登录密码"))
         SettingsTheme.style(password)
-        place(password, x: 332, y: 294, w: 440, h: 30)
-        setup(save, action: #selector(savePressed), x: 790, y: 289, w: 209)
-        let storage = NSTextField(wrappingLabelWithString: L("连招与密码仅存本机钥匙串，关闭功能会保留设置。"))
+        place(password, x: 332, y: 292, w: 440, h: 30)
+        setup(save, action: #selector(savePressed), x: 790, y: 287, w: 209)
+        let storage = NSTextField(wrappingLabelWithString: L("连招与密码仅加密保存在本机钥匙串中；关闭下方开关不会清空已存设置。"))
         storage.textColor = SettingsTheme.secondary; storage.font = .systemFont(ofSize: 11)
-        place(storage, x: 332, y: 337, w: 660, h: 30)
-        setup(verify, action: #selector(verifyPressed), x: 330, y: 388, w: 206)
+        place(storage, x: 332, y: 335, w: 660, h: 30)
+        setup(verify, action: #selector(verifyPressed), x: 330, y: 386, w: 206)
         enabled.target = self; enabled.action = #selector(enabledPressed)
         enabled.font = .systemFont(ofSize: 12)
-        place(enabled, x: 553, y: 393, w: 232, h: 28)
-        setup(clear, action: #selector(clearPressed), x: 794, y: 388, w: 204)
-        let limitations = NSTextField(wrappingLabelWithString: L("首次默认关闭。手动锁屏验证只试填一个字符，不按回车。\n仅用于已登录后的锁屏；不支持重启或 FileVault 首次登录。"))
+        place(enabled, x: 553, y: 391, w: 232, h: 28)
+        setup(clear, action: #selector(clearPressed), x: 794, y: 386, w: 204)
+        let limitations = NSTextField(wrappingLabelWithString: L("点「开始手动锁屏验证」后在 90 秒内锁屏并按连招，系统只会试填 1 个字符（不按回车）；确认看到字符后才可开启。重启或开机首次登录不支持代填。"))
         limitations.textColor = SettingsTheme.secondary; limitations.font = .systemFont(ofSize: 11)
-        place(limitations, x: 332, y: 440, w: 660, h: 38)
+        place(limitations, x: 332, y: 438, w: 660, h: 44)
         status.font = .systemFont(ofSize: 12, weight: .medium); status.textColor = SettingsTheme.ink
-        place(status, x: 332, y: 488, w: 660, h: 39)
+        place(status, x: 332, y: 490, w: 660, h: 37)
         setup(success, action: #selector(successPressed), x: 330, y: 531, w: 195)
         setup(failure, action: #selector(failurePressed), x: 535, y: 531, w: 145)
 
@@ -101,7 +107,7 @@ final class ComboUnlockView: SettingsPage {
 
     private func updateContents() {
         let idle = controller.mode == .idle && !controller.locked
-        summary.stringValue = L("连招：%@  ·  密码：%@", controller.sequenceLength == 0 ? L("未设置") : L("已保存 %@ 次", String(controller.sequenceLength)), controller.hasPassword ? L("已保存") : L("未设置"))
+        summary.stringValue = L("连招：%@  ·  密码：%@", controller.sequenceLength == 0 ? L("未设置") : L("已保存 %@ 下", String(controller.sequenceLength)), controller.hasPassword ? L("已保存") : L("未设置"))
         save.title = controller.hasPassword ? L("更换密码") : L("保存密码")
         record.isEnabled = idle; practice.isEnabled = idle && controller.sequenceLength > 0
         finish.isEnabled = controller.mode == .recording && (8...16).contains(controller.recorded.count)
@@ -115,8 +121,8 @@ final class ComboUnlockView: SettingsPage {
         if controller.mode == .recording {
             progress.stringValue = controller.recorded.map { code in MappedButton.chromecast.first { $0.code == code }?.name ?? "?" }.joined(separator: " → ")
         } else if controller.mode == .confirming {
-            progress.stringValue = L("再次确认：已输入 %@ 次", String(controller.recorded.count))
-        } else { progress.stringValue = L("连续 5 次错误暂停 30 秒。练习模式不会锁屏或输入密码。") }
+            progress.stringValue = L("再次确认：已输入 %@ 下", String(controller.recorded.count))
+        } else { progress.stringValue = L("可点「练习」在不锁屏时试按；锁屏状态下连续按错 5 次将暂停 30 秒。") }
         status.stringValue = controller.status
     }
     func leave() { password.stringValue = ""; controller.settingsClosed() }

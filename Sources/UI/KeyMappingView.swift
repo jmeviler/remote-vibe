@@ -127,7 +127,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
 
     private let modePicker = StyledSegmentedControl()
     private let diagram = RemoteDiagram(frame: NSRect(x: 0, y: 0, width: 305, height: 540))
-    private let studioEyebrow = SettingsTheme.eyebrow(L("按键设置"))
+    private let studioEyebrow = SettingsTheme.eyebrow(L("当前按键"))
     private let nameLabel = NSTextField(labelWithString: L("静音"))
     private let currentLabel = NSTextField(wrappingLabelWithString: "")
     private let triggerEyebrow = SettingsTheme.eyebrow(L("触发手势"))
@@ -179,7 +179,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         addSubview(stage)
         let inspector = SettingsPanel(frame: NSRect(x: 414, y: 0, width: 610, height: 574))
         addSubview(inspector)
-        let deviceEyebrow = SettingsTheme.eyebrow(L("遥控器面板"), light: true)
+        let deviceEyebrow = SettingsTheme.eyebrow(L("遥控器键位"), light: true)
         deviceEyebrow.frame = NSRect(x: 24, y: 22, width: 220, height: 16); stage.addSubview(deviceEyebrow)
         deviceName.frame = NSRect(x: 24, y: 44, width: 300, height: 25); stage.addSubview(deviceName)
         modePicker.surfaceStyle = .darkStage
@@ -348,11 +348,11 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         liveStatus.lineBreakMode = .byTruncatingTail
         place(liveStatus, y: 534, h: 17)
 
-        voiceStudio.frame = NSRect(x: 440, y: 122, width: 558, height: 420)
+        voiceStudio.frame = NSRect(x: 440, y: 122, width: 558, height: 428)
         voiceStudio.onSettingsChange = { [weak self] in
             guard let self else { return }
             if self.selected == 0 {
-                self.currentLabel.stringValue = L("按住说话，松手结束 · 当前：%@", self.voiceSettings.trigger.summaryTitle)
+                self.currentLabel.stringValue = L("按住说话，松手结束 · 下方选项修改后立即生效")
             }
             self.onVoiceSettingsChange?()
         }
@@ -392,7 +392,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     func reloadVoiceStudio() {
         voiceStudio.reloadFromSettings()
         if selected == 0 {
-            currentLabel.stringValue = L("按住说话，松手结束 · 当前：%@", voiceSettings.trigger.summaryTitle)
+            currentLabel.stringValue = L("按住说话，松手结束 · 下方选项修改后立即生效")
         }
     }
 
@@ -482,7 +482,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         brand.font = .systemFont(ofSize: 12, weight: .medium); brand.textColor = SettingsTheme.color(0x6B756A)
         brand.alignment = .center; brand.frame = NSRect(x: 74, y: 478, width: 133, height: 20); diagram.addSubview(brand)
         deviceName.stringValue = mapping.profile == .chromecast ? "Google Chromecast" : L("小米 RC003")
-        capacity.stringValue = L("共 %@ 个按键 · 按下实体键自动定位", String(mapping.buttons.count))
+        capacity.stringValue = L("点选图中按键，或直接按遥控器选键")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -544,7 +544,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
                 button.toolTip = "\(physical.name) → \(draftConfig.summary)"
             } else {
                 button.dirty = false
-                button.toolTip = L("按住说话，松开结束 · 点击配置语音工作台")
+                button.toolTip = L("语音键 · 按住说话，点击查看语音输入设置")
             }
         }
     }
@@ -615,7 +615,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
     private func displaySelection() {
         updateRemoteButtonStates()
         let voice = selected == 0
-        studioEyebrow.stringValue = voice ? L("语音设置") : L("按键设置")
+        studioEyebrow.stringValue = voice ? L("语音输入") : L("当前按键")
         nameLabel.stringValue = selectedButton?.name ?? L("语音键")
         triggerPicker.isEnabled = !voice
         actionPicker.isEnabled = !voice && !reservedToggle
@@ -666,17 +666,23 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         shortcutRecorder.allowFnOnly = selectedTrigger != .doubleClick
         shortcutRecorder.usage = value.usage
         shortcutRecorder.modifiers = value.modifiers
-        capacity.stringValue = editingMouse ? L("当前编辑：鼠标键位 · 切换键在普通键位设置") :
-            L("共 %@ 个按键 · 按下实体键自动定位", String(mapping.buttons.count))
+        capacity.stringValue = editingMouse ? L("正在编辑鼠标键位 · 进出键请在「普通键位」设置") :
+            L("点选图中按键，或直接按遥控器选键")
         capacity.toolTip = capacity.stringValue
         displayOptions()
         refreshStatus()
     }
 
     private func displayOptions() {
-        currentLabel.stringValue = selected == 0 ?
-            L("按住说话，松手结束 · 当前：%@", voiceSettings.trigger.summaryTitle) :
-            L("已保存 · %@：%@", selectedTrigger.title, mapping.binding(selectedButton!, mouse: editingMouse)[selectedTrigger].map(ActionCatalog.displayName) ?? L("未设置"))
+        if selected == 0 {
+            currentLabel.stringValue = L("按住说话，松手结束 · 下方选项修改后立即生效")
+        } else {
+            let saved = mapping.binding(selectedButton!, mouse: editingMouse)
+            let savedParts = ButtonTrigger.allCases.compactMap { trigger in
+                saved[trigger].map { "\(trigger.title)：\(ActionCatalog.displayName($0))" }
+            }.joined(separator: "  ·  ")
+            currentLabel.stringValue = L("当前生效 · %@", savedParts)
+        }
         currentLabel.toolTip = currentLabel.stringValue
 
         if let selectedButton { remoteButtons[selected]?.toolTip = "\(selectedButton.name) → \(selectedConfiguration.summary)" }
@@ -691,6 +697,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         actionPreview.isHidden = voice || hasEditor
         actionPreview.binding = selectedConfiguration[selectedTrigger]
         actionPreview.voice = voice || selectedBinding.kind == .remoteVoice
+        actionPreview.hasGestures = selectedConfiguration.hasGestures
         let app = !voice && selectedBinding.kind == .openApp
         let webpage = !voice && selectedBinding.kind == .openURL
         targetLabel.isHidden = !app && !webpage
@@ -699,59 +706,63 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         targetField.isEditable = webpage
         targetField.placeholderString = app ? L("点击下方按钮选择 .app") : "https://example.com"
         chooseAppButton.isHidden = !app
-        if reservedToggle {
-            hint.stringValue = L("此键的模式切换手势在两种模式中都保留。\n可切换上方手势查看；请在“普通键位”中修改。")
-        } else if selectedBinding.kind == .toggleMouseMode {
-            hint.stringValue = L("用此键的%@切换模式；松开所有键后生效。\n再次使用相同手势退出。鼠标键位会保留此键的所有手势。", selectedTrigger.title)
-        } else if selectedBinding.isMouseMovement {
-            hint.stringValue = L("按住持续移动，松开立即停止；长按移动逐渐加速。\n可同时按两个方向斜向移动。")
-        } else if selectedBinding.isMouseAction {
-            hint.stringValue = L("在指针当前位置点击一次，按住不会重复点击。\n连续按两次左键可双击。")
-        } else if voice {
-            hint.stringValue = ""
-        } else if selectedBinding.kind == .remoteVoice {
-            hint.stringValue = selectedTrigger == .longPress ?
-                L("按住约 0.55 秒后开启 Google 遥控器麦克风，松开结束。\n需要 ATVV 1.0；旧协议请使用原语音键。") :
-                L("按下开启 Google 遥控器麦克风，松开结束。\n需要 ATVV 1.0；旧协议请使用原语音键。")
-        } else if selectedBinding.isFn {
-            hint.stringValue = selectedTrigger == .longPress ?
-                L("仅模拟 Fn：长按约 0.55 秒后保持，松开释放。\n使用目标软件选择的麦克风，不开启遥控器麦克风。") :
-                L("仅模拟 Fn：按住保持，松开释放。\n使用目标软件选择的麦克风，不开启遥控器麦克风。")
-        } else if selectedBinding.kind == .text {
-            hint.stringValue = L("先将光标放入目标输入框，再按遥控器。\n按一次粘贴一次，不发送回车；文本保存在本机。")
-        } else if app {
-            hint.stringValue = L("按一次打开并激活所选应用，已运行时切换到它。\n每个按键、每种触发方式可选择不同应用。")
-        } else if webpage {
-            hint.stringValue = L("按一次交给默认浏览器打开，可能新建标签页。\n支持 http:// 和 https:// 地址。")
-        } else if selectedBinding.kind == .systemKey {
-            hint.stringValue = L("发送一次系统音量、亮度或媒体按键。\n亮度取决于显示器支持，播放控制取决于当前媒体应用。")
-        } else if selectedBinding.kind == .nextDisplay {
-            hint.stringValue = L("切到下一块屏幕的可见窗口，鼠标随之移入。\n不移动窗口，不切换桌面空间；按一次切换一次。")
-        } else if selectedBinding.kind == .nextWindow {
-            hint.stringValue = L("在当前屏幕的可见普通窗口间循环。\n跳过最小化窗口；按一次切换一次。")
-        } else if custom {
-            hint.stringValue = L("点击上方录制框直接按下键盘组合键，或在下方手动选择修饰键与主键。")
-        } else if selectedBinding.kind == .key {
-            hint.stringValue = L("按下遥控器时，向当前活动窗口发送 %@。", selectedBinding.title)
-        } else {
-            hint.stringValue = L("切换按键后未保存的修改也会暂存，点击「保存并生效」后统一应用。")
+        if !voice, let error = selectedConfiguration.validationMessage(for: mapping.profile) {
+            hint.stringValue = error
+            return
         }
-        if !voice {
-            if let error = selectedConfiguration.validationMessage(for: mapping.profile) {
-                hint.stringValue = error
-            } else if selectedConfiguration.hasGestures {
-                let gestureNote: String
-                if selectedConfiguration.doubleClick != nil && selectedConfiguration.longPress != nil {
-                    gestureNote = L("已开启多手势：连按两次触发双击，按住约半秒触发长按。")
-                } else if selectedConfiguration.doubleClick != nil {
-                    gestureNote = L("已开启双击：连按两次触发双击，单按松手约 0.3 秒后触发单击。")
-                } else {
-                    gestureNote = L("已开启长按：短按松手触发单击，按住约半秒触发长按。")
-                }
-                hint.stringValue += "\n" + gestureNote
-            } else if selectedTrigger != .singleClick {
-                hint.stringValue += "\n" + L("当前手势未设置动作，不影响单击响应速度。")
+        let unset = !voice && selectedTrigger != .singleClick && selectedConfiguration[selectedTrigger] == nil
+        var primaryHint: String
+        var replacesWithGestureSummary = false
+        if voice {
+            primaryHint = ""
+        } else if reservedToggle {
+            primaryHint = L("此键用于进出鼠标模式，在鼠标模式下固定保留。\n如需更换切换键，请切回左侧「普通键位」修改。")
+        } else if unset {
+            primaryHint = L("未设置%@动作时，单按会立即响应，不会产生等待延迟。", selectedTrigger.title)
+        } else if selectedBinding.kind == .toggleMouseMode {
+            primaryHint = L("用此键的%@进入鼠标模式，再按一次退出；进入后的指针移动和左右键可在左侧「鼠标键位」单独设置。", selectedTrigger.title)
+        } else if selectedBinding.isMouseMovement {
+            primaryHint = L("切换到鼠标模式后生效；可同时按住两个方向键斜向移动。")
+        } else if selectedBinding.isMouseAction {
+            primaryHint = L("连按两次左键可触发双击；按住左键不会连续连点。")
+        } else if selectedBinding.kind == .remoteVoice {
+            primaryHint = selectedTrigger == .longPress ?
+                L("仅支持新版 Google 遥控器（ATVV 1.0）；旧款请直接使用原语音键。") :
+                L("仅支持新版 Google 遥控器（ATVV 1.0）；如需短按做别的事，可把开麦改绑到「长按」。")
+        } else if selectedBinding.isFn {
+            primaryHint = L("适合触发系统听写或输入法切换；若要用遥控器自带麦克风说话，请改选「遥控器麦克风」。")
+        } else if selectedBinding.kind == .text {
+            primaryHint = L("先把光标点进目标输入框再按遥控器：自动粘贴上方内容，不按回车，也不覆盖原有剪贴板。")
+        } else if app {
+            primaryHint = L("按下后启动所选应用；如果应用已在运行，则直接切到最前。")
+        } else if webpage {
+            primaryHint = L("按下后使用默认浏览器打开上方网址（需包含 https:// 或 http://）。")
+        } else if custom {
+            primaryHint = L("点一下上方录制框直接按键盘录入，也可手动勾选修饰键与主键；按一次发送一次。")
+        } else if selectedBinding.kind == .systemKey {
+            primaryHint = L("外接显示器若不支持系统亮度控制，亮度键可能无响应；播放键作用于当前媒体软件。")
+        } else if selectedBinding.kind == .nextDisplay {
+            primaryHint = L("仅在连接多台显示器时生效；不会搬动窗口位置，也不会切换全屏桌面空间。")
+        } else if selectedBinding.kind == .nextWindow {
+            primaryHint = L("仅切换当前这块屏幕上的普通窗口；其他屏幕和已最小化的窗口不受影响。")
+        } else if selectedBinding.kind == .disabled {
+            primaryHint = L("常用于配合双击或长按：把单击设为「不执行」，即可单按无反应、只响应双击或长按。")
+        } else {
+            replacesWithGestureSummary = true
+            primaryHint = L("可在上方切到「双击」或「长按」，为同一个按键增加更多动作；改完点「保存并生效」。")
+        }
+        if !voice, selectedConfiguration.hasGestures {
+            let gestureNote: String
+            if selectedConfiguration.doubleClick != nil && selectedConfiguration.longPress != nil {
+                gestureNote = L("已启用多手势：连按两次触发双击（单按松手约 0.3 秒响应），按住约半秒触发长按。")
+            } else if selectedConfiguration.doubleClick != nil {
+                gestureNote = L("已启用双击：连按两次触发双击；单按会在松手约 0.3 秒确认无第二下后响应。")
+            } else {
+                gestureNote = L("已启用长按：短按松手立即触发单击，按住约半秒触发长按。")
             }
+            hint.stringValue = (replacesWithGestureSummary || unset) ? gestureNote : (primaryHint + "\n" + gestureNote)
+        } else {
+            hint.stringValue = primaryHint
         }
     }
 
@@ -931,6 +942,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
 
     func refreshStatus() {
         let dirty = hasUnsavedChanges
+        let currentInvalid = selected == 0 ? nil : selectedConfiguration.validationMessage(for: mapping.profile)
         let invalid = [normalDrafts, mouseDrafts].flatMap { values in
             mapping.buttons.compactMap { button -> String? in
                 values[String(button.code)]?.validationMessage(for: mapping.profile).map { "\(button.name)：\($0)" }
@@ -941,7 +953,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
         discardButton.isHidden = voice || !dirty
         liveStatus.isHidden = voice
         if let invalid {
-            liveStatus.stringValue = invalid
+            liveStatus.stringValue = currentInvalid != nil ? L("请先补全或修正上方提示项后再保存") : invalid
             liveStatus.textColor = SettingsTheme.error
         } else if let notice = mapping.configurationNotice {
             liveStatus.stringValue = notice
@@ -954,7 +966,7 @@ final class KeyMappingView: SettingsPage, NSTextViewDelegate, NSTextFieldDelegat
             liveStatus.textColor = SettingsTheme.secondary
         }
         liveStatus.toolTip = liveStatus.stringValue
-        hint.textColor = selectedConfiguration.validationMessage == nil ? SettingsTheme.secondary : SettingsTheme.error
+        hint.textColor = currentInvalid == nil ? SettingsTheme.secondary : SettingsTheme.error
         permissionButton.isHidden = voice || (mapping.listeningAllowed && AXIsProcessTrusted()) ||
             !mapping.buttons.contains { KeyMapping.binding($0, normal: normalDrafts, mouse: mouseDrafts, inMouseMode: editingMouse).usesListener }
         permissionButton.title = !mapping.listeningAllowed ? L("允许输入监控") : L("允许辅助功能")

@@ -29,7 +29,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     private let permission = NSTextField(wrappingLabelWithString: "")
     private let readiness = NSTextField(labelWithString: L("正在检查使用条件…"))
     private let permissionsButton = SettingsTheme.button(L("权限设置"))
-    private let message = NSTextField(wrappingLabelWithString: L("在左侧点选按键，或直接按手里的遥控器即可修改配置。"))
+    private let message = NSTextField(wrappingLabelWithString: L("关闭此窗口后，Remote Vibe 仍会在菜单栏后台运行。"))
     private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? L("开发版")
     private let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—"
     private let updateStatus = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -362,7 +362,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         let accessibility = AXIsProcessTrusted(), inputMonitoring = mapping.listeningAllowed
         audioLabel.stringValue = !mic.available ? L("语音组件：需要安装") :
             mic.driverNeedsUpdate ? L("语音组件：需运行完整安装包更新") :
-            voiceSettings.switchDefaultInput ? L("语音组件：已就绪") : L("语音组件：已就绪（免切默认麦）")
+            voiceSettings.switchDefaultInput ? L("语音组件：已就绪") : L("语音组件：已就绪（不切系统麦）")
         audioLabel.toolTip = audioLabel.stringValue
         if accessibility && inputMonitoring {
             permission.stringValue = L("系统权限：已全部开启")
@@ -383,19 +383,24 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
         if voiceSettings.trigger.requiresAccessibility && !accessibility { missing.append(L("允许辅助功能")) }
         if remote.xiaomiReady && !xiaomiVoiceKey.ready { missing.append(L("重新连接小米语音键")) }
         if !missing.isEmpty {
-            readiness.stringValue = L("待完成设置：%@", missing.joined(separator: "、"))
+            readiness.stringValue = L("未就绪：请先%@", missing.joined(separator: "、"))
         } else if unlock.blocksActions {
-            readiness.stringValue = L("语音已暂停 · 当前处于锁屏或连招录制中")
+            readiness.stringValue = L("锁屏或录入连招时暂停语音")
+        } else if active && !released {
+            readiness.stringValue = L("正在收音 · 松开语音键结束")
         } else if active || remote.voiceBusy {
-            readiness.stringValue = L("正在处理语音 · 请等待本句结束")
+            readiness.stringValue = L("正在收尾 · 请等本句输入完成")
         } else if mapping.fnHeld {
-            readiness.stringValue = L("请先松开 Fn 按键后再开始语音")
+            readiness.stringValue = L("请先松开按住的 Fn 键，再按语音键")
+        } else if voiceSettings.trigger == .audioOnly {
+            readiness.stringValue = L("麦克风已就绪 · 按住语音键收音（不发快捷键）")
         } else if voiceSettings.trigger != .holdFn || !voiceSettings.switchDefaultInput {
-            readiness.stringValue = L("已就绪 · %@ · %@", voiceSettings.trigger.summaryTitle,
-                                      voiceSettings.switchDefaultInput ? L("临时切换默认输入") : L("固定输入源 Chromecast Mic"))
+            readiness.stringValue = voiceSettings.switchDefaultInput ?
+                L("已就绪 · 触发方式：%@", voiceSettings.trigger.summaryTitle) :
+                L("已就绪 · %@ · 请在语音软件内选定 Chromecast Mic", voiceSettings.trigger.summaryTitle)
         } else {
-            readiness.stringValue = inputMonitoring ? L("已就绪 · 在任意输入框按住遥控器语音键即可说话") :
-                L("语音已就绪 · 自定义按键需开启输入监控")
+            readiness.stringValue = inputMonitoring ? L("已就绪 · 点击任意输入框，按住遥控器语音键即可说话") :
+                L("语音已就绪 · 如需改绑快捷键请开启「输入监控」")
         }
         shellView?.readinessDot.isReady = missing.isEmpty
         readiness.textColor = missing.isEmpty ? SettingsTheme.ink : SettingsTheme.error
@@ -615,9 +620,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate, NS
     @objc private func showVoiceHelp() {
         guard window.attachedSheet == nil else { return }
         let alert = NSAlert()
-        alert.messageText = L("确认微信语音能出字")
-        alert.informativeText = L("1. 在微信启用“长按 Fn 全局语音输入”，并允许微信使用麦克风。\n2. 微信输入设备选择系统默认输入或 Chromecast Mic。\n3. 关闭此说明，点击其他软件的文本框，按住遥控器原语音键说话，松开后确认文字出现。\n\n设备就绪不代表微信识别已验证；App 不读取识别结果。模拟 Fn 按键本身不会开启遥控器麦克风。")
-        alert.addButton(withTitle: L("知道了，去试说"))
+        alert.messageText = L("微信全局语音输入设置步骤")
+        alert.informativeText = L("1. 打开 Mac 微信「设置 → 通用」，开启「长按 Fn 进行全局语音输入」，并在系统隐私设置中允许微信使用麦克风。\n2. 将微信的语音输入设备设为「系统默认」或「Chromecast Mic」。\n3. 点击任意软件的输入框，按住遥控器语音键说话，松手即可出字。\n\n注：语音识别由微信完成，Remote Vibe 只负责把遥控器声音送入虚拟麦克风并触发快捷键，不会读取语音或文字内容。")
+        alert.addButton(withTitle: L("知道了"))
         alert.beginSheetModal(for: window)
     }
 
